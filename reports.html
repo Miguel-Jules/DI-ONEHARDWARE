@@ -1,0 +1,211 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Reports – DI-One Hardware</title>
+  <link rel="stylesheet" href="css/style.css" />
+  <style>
+    .report-tabs { display:flex; gap:0; border-radius:8px; overflow:hidden; border:1.5px solid var(--border); margin-bottom:22px; width:fit-content; }
+    .report-tab { padding:8px 20px; background:#f8fafc; border:none; cursor:pointer; font-size:0.88rem; font-weight:500; color:var(--text-muted); transition:all 0.18s; font-family:var(--font); }
+    .report-tab.active { background:var(--primary); color:#fff; }
+  </style>
+</head>
+<body>
+<div class="app-wrapper">
+  <aside class="sidebar" id="sidebar"></aside>
+  <div class="main-content">
+    <div class="topbar">
+      <h1>📋 Reports</h1>
+      <div class="topbar-right">
+        <span class="badge badge-blue">Owner / Manager</span>
+      </div>
+    </div>
+    <div class="page-body">
+
+      <div class="report-tabs">
+        <button class="report-tab active" onclick="switchTab('sales')">🛒 Sales</button>
+        <button class="report-tab" onclick="switchTab('inventory')">📦 Inventory</button>
+        <button class="report-tab" onclick="switchTab('stock')">🔄 Stock Log</button>
+        <button class="report-tab" onclick="switchTab('estimates')">📐 Estimates</button>
+      </div>
+
+      <!-- Stats summary -->
+      <div class="stats-grid" id="report-stats"></div>
+
+      <!-- Filters -->
+      <div class="card" id="filter-card">
+        <div class="search-bar" style="margin:0;">
+          <input type="date" id="filter-from" class="form-control" style="width:auto;" onchange="renderReport()" />
+          <span style="color:var(--text-muted);">to</span>
+          <input type="date" id="filter-to" class="form-control" style="width:auto;" onchange="renderReport()" />
+          <button class="btn btn-outline btn-sm" onclick="clearFilters()">Clear Filter</button>
+          <button class="btn btn-primary btn-sm" onclick="printReport()">🖨 Print</button>
+        </div>
+      </div>
+
+      <!-- Report Table -->
+      <div class="card">
+        <div id="report-table-wrap"></div>
+      </div>
+
+    </div>
+  </div>
+</div>
+
+<script src="app.js"></script>
+<script>
+const user = Auth.require('owner');
+document.getElementById('sidebar').innerHTML = buildSidebar('owner', 'reports');
+
+let activeTab = 'sales';
+
+function switchTab(tab) {
+  activeTab = tab;
+  document.querySelectorAll('.report-tab').forEach((el, i) => {
+    el.classList.toggle('active', ['sales','inventory','stock','estimates'][i] === tab);
+  });
+  document.getElementById('filter-card').style.display = tab === 'inventory' ? 'none' : '';
+  renderReport();
+}
+
+function clearFilters() {
+  document.getElementById('filter-from').value = '';
+  document.getElementById('filter-to').value = '';
+  renderReport();
+}
+
+function inRange(ts) {
+  const from = document.getElementById('filter-from').value;
+  const to   = document.getElementById('filter-to').value;
+  const d = new Date(ts);
+  if (from && d < new Date(from)) return false;
+  if (to   && d > new Date(to + 'T23:59:59')) return false;
+  return true;
+}
+
+function renderReport() {
+  const wrap = document.getElementById('report-table-wrap');
+  const statsEl = document.getElementById('report-stats');
+
+  if (activeTab === 'sales') {
+    const sales = Store.get('sales', []).filter(s => inRange(s.date));
+    const total = sales.reduce((a,s) => a + s.total, 0);
+    const cashTotal  = sales.filter(s => s.payMode !== 'gcash').reduce((a,s) => a + s.total, 0);
+    const gcashTotal = sales.filter(s => s.payMode === 'gcash').reduce((a,s) => a + s.total, 0);
+    statsEl.innerHTML = `
+      <div class="stat-card green"><div class="stat-label">Total Revenue</div><div class="stat-value" style="font-size:1.3rem">${Util.fmtMoney(total)}</div></div>
+      <div class="stat-card blue"><div class="stat-label">Transactions</div><div class="stat-value">${sales.length}</div></div>
+      <div class="stat-card blue"><div class="stat-label">💵 Cash Sales</div><div class="stat-value" style="font-size:1.3rem">${Util.fmtMoney(cashTotal)}</div></div>
+      <div class="stat-card green"><div class="stat-label">📱 GCash Sales</div><div class="stat-value" style="font-size:1.3rem">${Util.fmtMoney(gcashTotal)}</div></div>
+      <div class="stat-card orange"><div class="stat-label">Avg. Transaction</div><div class="stat-value" style="font-size:1.3rem">${Util.fmtMoney(sales.length ? total/sales.length : 0)}</div></div>
+    `;
+    wrap.innerHTML = `
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>Ref</th><th>Date</th><th>Cashier</th><th>Payment</th><th>Items</th><th>Total</th><th>Cash</th><th>Change</th></tr></thead>
+          <tbody>${!sales.length
+            ? '<tr><td colspan="8" style="text-align:center;padding:20px;color:var(--text-muted);">No sales in this period.</td></tr>'
+            : sales.map(s=>`<tr>
+                <td><span class="badge badge-blue">${s.ref}</span></td>
+                <td>${Util.fmtDateTime(s.date)}</td>
+                <td>${s.staffName}</td>
+                <td>${s.payMode === 'gcash'
+                  ? '<span class="badge" style="background:#ccfbf1;color:#0d9488;">📱 GCash</span>'
+                  : '<span class="badge badge-blue">💵 Cash</span>'}</td>
+                <td>${s.items.length}</td>
+                <td style="font-weight:600;color:var(--success)">${Util.fmtMoney(s.total)}</td>
+                <td>${s.payMode === 'gcash' ? '<span style="color:var(--text-muted);">—</span>' : Util.fmtMoney(s.cash)}</td>
+                <td>${s.payMode === 'gcash' ? '<span style="color:var(--text-muted);">—</span>' : Util.fmtMoney(s.change)}</td>
+              </tr>`).join('')
+          }</tbody>
+        </table>
+      </div>`;
+
+  } else if (activeTab === 'inventory') {
+    const products = Store.get('products', []);
+    const totalVal = products.reduce((a,p) => a + p.cost*p.stock, 0);
+    statsEl.innerHTML = `
+      <div class="stat-card blue"><div class="stat-label">Total Products</div><div class="stat-value">${products.length}</div></div>
+      <div class="stat-card green"><div class="stat-label">Total Stock Value</div><div class="stat-value" style="font-size:1.3rem">${Util.fmtMoney(totalVal)}</div><div class="stat-sub">At cost price</div></div>
+      <div class="stat-card orange"><div class="stat-label">Low Stock</div><div class="stat-value">${products.filter(p=>p.stock>0&&p.stock<=20).length}</div></div>
+      <div class="stat-card red"><div class="stat-label">Out of Stock</div><div class="stat-value">${products.filter(p=>p.stock<=0).length}</div></div>
+    `;
+    wrap.innerHTML = `
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>Product</th><th>Category</th><th>Stock</th><th>Unit</th><th>Sell Price</th><th>Cost</th><th>Stock Value</th><th>Status</th></tr></thead>
+          <tbody>${products.map(p=>`<tr>
+            <td>${p.icon} <strong>${p.name}</strong></td>
+            <td><span class="badge badge-gray">${p.category}</span></td>
+            <td>${p.stock}</td>
+            <td>${p.unit}</td>
+            <td>${Util.fmtMoney(p.price)}</td>
+            <td>${Util.fmtMoney(p.cost)}</td>
+            <td>${Util.fmtMoney(p.cost*p.stock)}</td>
+            <td>${p.stock<=0?'<span class="badge badge-red">Out</span>':p.stock<=20?'<span class="badge badge-orange">Low</span>':'<span class="badge badge-green">OK</span>'}</td>
+          </tr>`).join('')}</tbody>
+        </table>
+      </div>`;
+
+  } else if (activeTab === 'stock') {
+    const logs = Store.get('stockLogs', []).filter(l => inRange(l.date));
+    statsEl.innerHTML = `
+      <div class="stat-card green"><div class="stat-label">Stock In Events</div><div class="stat-value">${logs.filter(l=>l.type==='in').length}</div></div>
+      <div class="stat-card red"><div class="stat-label">Stock Out Events</div><div class="stat-value">${logs.filter(l=>l.type==='out').length}</div></div>
+    `;
+    wrap.innerHTML = `
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>Date</th><th>Type</th><th>Product</th><th>Qty</th><th>Before</th><th>After</th><th>Notes</th><th>By</th></tr></thead>
+          <tbody>${!logs.length
+            ? '<tr><td colspan="8" style="text-align:center;padding:20px;color:var(--text-muted);">No stock logs in this period.</td></tr>'
+            : logs.map(l=>`<tr>
+                <td>${Util.fmtDateTime(l.date)}</td>
+                <td>${l.type==='in'?'<span class="badge badge-green">📥 In</span>':'<span class="badge badge-red">📤 Out</span>'}</td>
+                <td>${l.productName}</td>
+                <td style="font-weight:600;color:${l.type==='in'?'var(--success)':'var(--danger)'}">${l.type==='in'?'+':'−'}${l.qty}</td>
+                <td>${l.before}</td>
+                <td>${l.after}</td>
+                <td style="font-size:0.83rem;color:var(--text-muted)">${l.notes||'—'}</td>
+                <td>${l.staffName}</td>
+              </tr>`).join('')
+          }</tbody>
+        </table>
+      </div>`;
+
+  } else if (activeTab === 'estimates') {
+    const estimates = Store.get('estimates', []).filter(e => inRange(e.date));
+    const total = estimates.reduce((a,e) => a + e.totalCost, 0);
+    statsEl.innerHTML = `
+      <div class="stat-card blue"><div class="stat-label">Total Estimates</div><div class="stat-value">${estimates.length}</div></div>
+      <div class="stat-card orange"><div class="stat-label">Total Estimated Value</div><div class="stat-value" style="font-size:1.3rem">${Util.fmtMoney(total)}</div></div>
+    `;
+    wrap.innerHTML = `
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>Ref</th><th>Project</th><th>Items</th><th>Total Cost</th><th>Created By</th><th>Date</th></tr></thead>
+          <tbody>${!estimates.length
+            ? '<tr><td colspan="6" style="text-align:center;padding:20px;color:var(--text-muted);">No estimates in this period.</td></tr>'
+            : estimates.map(e=>`<tr>
+                <td><span class="badge badge-orange">${e.ref}</span></td>
+                <td>${e.project}</td>
+                <td>${e.items.length}</td>
+                <td style="font-weight:600;color:var(--accent)">${Util.fmtMoney(e.totalCost)}</td>
+                <td>${e.createdBy}</td>
+                <td>${Util.fmtDate(e.date)}</td>
+              </tr>`).join('')
+          }</tbody>
+        </table>
+      </div>`;
+  }
+}
+
+function printReport() {
+  window.print();
+}
+
+renderReport();
+</script>
+</body>
+</html>

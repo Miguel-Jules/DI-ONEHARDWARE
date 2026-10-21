@@ -1,0 +1,325 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Material Estimation – DI-One Hardware</title>
+  <link rel="stylesheet" href="css/style.css" />
+  <style>
+    .est-layout { display: grid; grid-template-columns: 1fr 380px; gap: 20px; align-items: start; }
+    .est-items-table td input, .est-items-table td select {
+      width: 100%; padding: 5px 8px; border: 1.5px solid var(--border);
+      border-radius: 5px; font-size: 0.84rem; font-family: var(--font);
+    }
+    .est-items-table td input:focus, .est-items-table td select:focus { outline:none; border-color:var(--primary-light); }
+    .summary-row { display:flex; justify-content:space-between; padding:5px 0; font-size:0.88rem; }
+    .summary-row.total { font-weight:700; font-size:1rem; padding-top:10px; border-top:2px solid var(--border); margin-top:6px; }
+    @media(max-width:900px){ .est-layout{grid-template-columns:1fr;} }
+  </style>
+</head>
+<body>
+<div class="app-wrapper">
+  <aside class="sidebar" id="sidebar"></aside>
+  <div class="main-content">
+    <div class="topbar">
+      <h1>📐 Material Estimation</h1>
+      <div class="topbar-right">
+        <span class="badge badge-blue" id="role-badge"></span>
+      </div>
+    </div>
+    <div class="page-body">
+
+      <div class="est-layout">
+        <!-- Left: builder -->
+        <div>
+          <div class="card">
+            <div class="card-title">📝 New Estimate</div>
+            <div class="form-row">
+              <div class="form-group">
+                <label>Project / Client Name</label>
+                <input type="text" id="proj-name" class="form-control" placeholder="e.g. Juan dela Cruz – House Renovation" />
+              </div>
+              <div class="form-group">
+                <label>Reference #</label>
+                <input type="text" id="est-ref" class="form-control" readonly />
+              </div>
+            </div>
+            <div class="form-group">
+              <label>Notes / Description</label>
+              <textarea id="est-notes" class="form-control" rows="2" placeholder="Optional notes..."></textarea>
+            </div>
+          </div>
+
+          <div class="card">
+            <div class="section-header">
+              <div class="card-title" style="margin:0">🧱 Materials List</div>
+              <button class="btn btn-accent btn-sm" onclick="addRow()">+ Add Material</button>
+            </div>
+            <div class="table-wrap">
+              <table class="est-items-table">
+                <thead>
+                  <tr>
+                    <th>Product</th>
+                    <th>Unit</th>
+                    <th>Qty</th>
+                    <th>Unit Price</th>
+                    <th>Subtotal</th>
+                    <th></th>
+                  </tr>
+                </thead>
+                <tbody id="est-rows"></tbody>
+              </table>
+            </div>
+            <div style="margin-top:12px;display:flex;gap:10px;">
+              <button class="btn btn-accent" onclick="addRow()">+ Add Row</button>
+              <button class="btn btn-outline" onclick="clearRows()">🗑 Clear All</button>
+            </div>
+          </div>
+        </div>
+
+        <!-- Right: summary + history -->
+        <div>
+          <div class="card" style="position:sticky;top:80px;">
+            <div class="card-title">💰 Cost Summary</div>
+            <div id="summary-lines"></div>
+            <div class="summary-row total">
+              <span>TOTAL ESTIMATED COST</span>
+              <span id="grand-total">₱0.00</span>
+            </div>
+            <div style="margin-top:18px;display:flex;flex-direction:column;gap:8px;">
+              <button class="btn btn-accent btn-lg" onclick="saveEstimate()" style="justify-content:center;">💾 Save Estimate</button>
+              <button class="btn btn-outline" onclick="printEstimate()" style="justify-content:center;">🖨 Print / Export</button>
+            </div>
+          </div>
+
+          <div class="card" style="margin-top:0;">
+            <div class="card-title">📋 Saved Estimates</div>
+            <div id="est-history" style="max-height:360px;overflow-y:auto;"></div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Print area (hidden) -->
+<div id="print-area" style="display:none;"></div>
+
+<!-- View Modal -->
+<div class="modal-overlay" id="view-modal">
+  <div class="modal modal-lg">
+    <div class="modal-header">
+      <span class="modal-title">📐 Estimate Details</span>
+      <button class="modal-close" onclick="closeModal('view-modal')">✕</button>
+    </div>
+    <div id="view-modal-body"></div>
+  </div>
+</div>
+
+<script src="app.js"></script>
+<script>
+const user = Auth.requireAny();
+document.getElementById('sidebar').innerHTML = buildSidebar(user.role, 'estimation');
+document.getElementById('role-badge').textContent = user.role === 'owner' ? 'Owner / Manager' : 'Staff';
+
+const products = Store.get('products', []);
+let rowCount = 0;
+
+// Generate ref
+document.getElementById('est-ref').value = Util.genRef('EST');
+
+function productOptions(selectedId) {
+  return products.map(p =>
+    `<option value="${p.id}" data-price="${p.price}" data-unit="${p.unit}" ${p.id==selectedId?'selected':''}>${p.icon} ${p.name}</option>`
+  ).join('');
+}
+
+function addRow(item = null) {
+  rowCount++;
+  const rid = 'row-' + rowCount;
+  const prod = item ? products.find(p => p.id == item.productId) : products[0];
+  const qty = item ? item.qty : 1;
+  const price = item ? item.unitPrice : (prod ? prod.price : 0);
+
+  const tr = document.createElement('tr');
+  tr.id = rid;
+  tr.innerHTML = `
+    <td>
+      <select onchange="onProductChange('${rid}')" id="${rid}-prod">
+        ${productOptions(item ? item.productId : (prod ? prod.id : ''))}
+      </select>
+    </td>
+    <td><input type="text" id="${rid}-unit" value="${prod ? prod.unit : ''}" readonly style="background:#f8fafc;width:70px;" /></td>
+    <td><input type="number" id="${rid}-qty" value="${qty}" min="1" oninput="recalcRow('${rid}')" style="width:70px;" /></td>
+    <td><input type="number" id="${rid}-price" value="${price}" min="0" step="0.01" oninput="recalcRow('${rid}')" style="width:90px;" /></td>
+    <td><input type="text" id="${rid}-sub" value="${Util.fmtMoney(qty*price)}" readonly style="background:#f8fafc;font-weight:600;" /></td>
+    <td><button onclick="removeRow('${rid}')" class="btn btn-danger btn-sm">✕</button></td>
+  `;
+  document.getElementById('est-rows').appendChild(tr);
+  recalcAll();
+}
+
+function onProductChange(rid) {
+  const sel = document.getElementById(rid + '-prod');
+  const opt = sel.selectedOptions[0];
+  document.getElementById(rid + '-unit').value = opt.dataset.unit || '';
+  document.getElementById(rid + '-price').value = opt.dataset.price || 0;
+  recalcRow(rid);
+}
+
+function recalcRow(rid) {
+  const qty = parseFloat(document.getElementById(rid + '-qty').value) || 0;
+  const price = parseFloat(document.getElementById(rid + '-price').value) || 0;
+  document.getElementById(rid + '-sub').value = Util.fmtMoney(qty * price);
+  recalcAll();
+}
+
+function removeRow(rid) {
+  document.getElementById(rid)?.remove();
+  recalcAll();
+}
+
+function clearRows() {
+  if (!Util.confirm('Clear all rows?')) return;
+  document.getElementById('est-rows').innerHTML = '';
+  rowCount = 0;
+  recalcAll();
+}
+
+function getRows() {
+  const rows = [];
+  document.querySelectorAll('#est-rows tr').forEach(tr => {
+    const rid = tr.id;
+    const sel = document.getElementById(rid + '-prod');
+    if (!sel) return;
+    const opt = sel.selectedOptions[0];
+    const qty = parseFloat(document.getElementById(rid + '-qty').value) || 0;
+    const price = parseFloat(document.getElementById(rid + '-price').value) || 0;
+    rows.push({
+      productId: sel.value,
+      productName: opt.text,
+      unit: document.getElementById(rid + '-unit').value,
+      qty, unitPrice: price, subtotal: qty * price
+    });
+  });
+  return rows;
+}
+
+function recalcAll() {
+  const rows = getRows();
+  const total = rows.reduce((a, r) => a + r.subtotal, 0);
+  const lines = document.getElementById('summary-lines');
+  lines.innerHTML = rows.map(r =>
+    `<div class="summary-row"><span>${r.productName} × ${r.qty}</span><span>${Util.fmtMoney(r.subtotal)}</span></div>`
+  ).join('') || '<div style="color:var(--text-muted);font-size:0.85rem;padding:8px 0;">No items added yet</div>';
+  document.getElementById('grand-total').textContent = Util.fmtMoney(total);
+}
+
+function saveEstimate() {
+  const project = document.getElementById('proj-name').value.trim();
+  const ref = document.getElementById('est-ref').value.trim();
+  const notes = document.getElementById('est-notes').value.trim();
+  const items = getRows();
+  if (!project) { Util.toast('Please enter a project/client name.', 'warning'); return; }
+  if (!items.length) { Util.toast('Add at least one material.', 'warning'); return; }
+
+  const totalCost = items.reduce((a, r) => a + r.subtotal, 0);
+  const estimates = Store.get('estimates', []);
+  estimates.unshift({ id: Util.genId(), ref, project, notes, items, totalCost, createdBy: user.name, createdById: user.id, date: Date.now() });
+  Store.set('estimates', estimates);
+
+  Util.toast('Estimate saved successfully!', 'success');
+  document.getElementById('est-ref').value = Util.genRef('EST');
+  document.getElementById('proj-name').value = '';
+  document.getElementById('est-notes').value = '';
+  document.getElementById('est-rows').innerHTML = '';
+  rowCount = 0;
+  recalcAll();
+  loadHistory();
+}
+
+function loadHistory() {
+  const estimates = Store.get('estimates', []);
+  const el = document.getElementById('est-history');
+  if (!estimates.length) {
+    el.innerHTML = '<div style="color:var(--text-muted);font-size:0.85rem;padding:8px;">No saved estimates.</div>';
+    return;
+  }
+  el.innerHTML = estimates.slice(0,10).map(e => `
+    <div style="border:1px solid var(--border);border-radius:8px;padding:10px 12px;margin-bottom:8px;">
+      <div style="display:flex;justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap;">
+        <div>
+          <span class="badge badge-orange" style="margin-bottom:3px;">${e.ref}</span>
+          <div style="font-size:0.88rem;font-weight:600;">${e.project}</div>
+          <div style="font-size:0.75rem;color:var(--text-muted);">${e.items.length} items &bull; ${Util.fmtDate(e.date)}</div>
+        </div>
+        <div style="text-align:right;">
+          <div style="font-weight:700;color:var(--accent);">${Util.fmtMoney(e.totalCost)}</div>
+          <button class="btn btn-outline btn-sm" onclick="viewEstimate(${e.id})" style="margin-top:4px;">👁 View</button>
+        </div>
+      </div>
+    </div>
+  `).join('');
+}
+
+function viewEstimate(id) {
+  const estimates = Store.get('estimates', []);
+  const e = estimates.find(x => x.id === id);
+  if (!e) return;
+  document.getElementById('view-modal-body').innerHTML = `
+    <div style="display:flex;justify-content:space-between;flex-wrap:wrap;gap:10px;margin-bottom:16px;">
+      <div><strong>Ref:</strong> ${e.ref}<br><strong>Project:</strong> ${e.project}<br><strong>Created By:</strong> ${e.createdBy}</div>
+      <div style="text-align:right;"><strong>Date:</strong> ${Util.fmtDate(e.date)}<br>${e.notes ? '<strong>Notes:</strong> ' + e.notes : ''}</div>
+    </div>
+    <div class="table-wrap">
+      <table>
+        <thead><tr><th>Material</th><th>Unit</th><th>Qty</th><th>Unit Price</th><th>Subtotal</th></tr></thead>
+        <tbody>
+          ${e.items.map(i => `<tr><td>${i.productName}</td><td>${i.unit}</td><td>${i.qty}</td><td>${Util.fmtMoney(i.unitPrice)}</td><td>${Util.fmtMoney(i.subtotal)}</td></tr>`).join('')}
+        </tbody>
+        <tfoot>
+          <tr style="font-weight:700;">
+            <td colspan="4" style="text-align:right;">TOTAL COST:</td>
+            <td style="color:var(--accent)">${Util.fmtMoney(e.totalCost)}</td>
+          </tr>
+        </tfoot>
+      </table>
+    </div>
+  `;
+  document.getElementById('view-modal').classList.add('open');
+}
+
+function printEstimate() {
+  const project = document.getElementById('proj-name').value.trim() || 'Estimate';
+  const ref = document.getElementById('est-ref').value;
+  const items = getRows();
+  if (!items.length) { Util.toast('Add items first.', 'warning'); return; }
+  const total = items.reduce((a,r)=>a+r.subtotal,0);
+  const w = window.open('', '_blank');
+  w.document.write(`<html><head><title>${ref}</title><style>
+    body{font-family:'Segoe UI',Arial,sans-serif;padding:30px;color:#222;}
+    table{width:100%;border-collapse:collapse;margin-top:16px;}
+    th,td{border:1px solid #ccc;padding:8px 12px;font-size:0.9rem;}
+    th{background:#f0f4f8;}
+    h2{color:#1a3c5e;}
+    .total{font-weight:700;font-size:1.05rem;}
+  </style></head><body>
+    <h2>DI-One Hardware – Material Estimation</h2>
+    <p><strong>Ref:</strong> ${ref} &nbsp;|&nbsp; <strong>Project:</strong> ${project} &nbsp;|&nbsp; <strong>Date:</strong> ${new Date().toLocaleDateString('en-PH')}</p>
+    <table>
+      <thead><tr><th>Material</th><th>Unit</th><th>Qty</th><th>Unit Price</th><th>Subtotal</th></tr></thead>
+      <tbody>${items.map(i=>`<tr><td>${i.productName}</td><td>${i.unit}</td><td>${i.qty}</td><td>₱${i.unitPrice.toFixed(2)}</td><td>₱${i.subtotal.toFixed(2)}</td></tr>`).join('')}</tbody>
+      <tfoot><tr class="total"><td colspan="4" style="text-align:right;">TOTAL ESTIMATED COST</td><td>₱${total.toFixed(2)}</td></tr></tfoot>
+    </table>
+  </body></html>`);
+  w.print();
+}
+
+function closeModal(id) { document.getElementById(id).classList.remove('open'); }
+
+// Init
+addRow();
+loadHistory();
+</script>
+</body>
+</html>

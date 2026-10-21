@@ -1,0 +1,440 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Inventory – DI-One Hardware</title>
+  <link rel="stylesheet" href="css/style.css" />
+  <style>
+    .badge-expired  { background:#fce4e4; color:#b91c1c; border:1px solid #fca5a5; }
+    .badge-expiring { background:#fef9c3; color:#854d0e; border:1px solid #fde047; }
+    .badge-fresh    { background:#dcfce7; color:#15803d; border:1px solid #86efac; }
+    .badge-noexp    { background:#f1f5f9; color:#64748b; }
+    tr.row-expired  { background:#fff5f5 !important; }
+    tr.row-expiring { background:#fffbeb !important; }
+  </style>
+</head>
+<body>
+<div class="app-wrapper">
+  <aside class="sidebar" id="sidebar"></aside>
+  <div class="main-content">
+    <div class="topbar">
+      <h1>📦 Inventory Management</h1>
+      <div class="topbar-right">
+        <span class="badge badge-blue" id="role-badge"></span>
+      </div>
+    </div>
+    <div class="page-body">
+
+      <!-- Stats row -->
+      <div class="stats-grid" id="inv-stats"></div>
+
+      <!-- Table -->
+      <div class="card">
+        <div class="section-header">
+          <div class="card-title" style="margin:0">📋 Product List</div>
+          <div style="display:flex;gap:8px;" id="owner-actions"></div>
+        </div>
+        <div class="search-bar">
+          <input type="text" id="inv-search" placeholder="🔍 Search by name or category..." oninput="renderTable()" />
+          <select id="inv-cat" class="form-control" style="width:auto;" onchange="renderTable()">
+            <option value="">All Categories</option>
+          </select>
+          <select id="inv-stock-filter" class="form-control" style="width:auto;" onchange="renderTable()">
+            <option value="">All Stock Levels</option>
+            <option value="low">Low Stock (≤20)</option>
+            <option value="out">Out of Stock</option>
+            <option value="ok">In Stock</option>
+          </select>
+          <select id="inv-exp-filter" class="form-control" style="width:auto;" onchange="renderTable()">
+            <option value="">All Expiry Status</option>
+            <option value="expired">Expired</option>
+            <option value="expiring">Expiring Soon (≤30 days)</option>
+            <option value="fresh">Fresh (>30 days)</option>
+            <option value="none">No Expiry Set</option>
+          </select>
+        </div>
+        <div class="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th>Icon</th>
+                <th>Product Name</th>
+                <th>Category</th>
+                <th>Unit</th>
+                <th>Stock</th>
+                <th>Expiry Date</th>
+                <th>Expiry Status</th>
+                <th>Selling Price</th>
+                <th>Cost Price</th>
+                <th>Stock Value</th>
+                <th id="action-th"></th>
+              </tr>
+            </thead>
+            <tbody id="inv-table"></tbody>
+          </table>
+        </div>
+      </div>
+
+    </div>
+  </div>
+</div>
+
+<!-- Add/Edit Product Modal -->
+<div class="modal-overlay" id="product-modal">
+  <div class="modal">
+    <div class="modal-header">
+      <span class="modal-title" id="product-modal-title">Add Product</span>
+      <button class="modal-close" onclick="closeModal('product-modal')">✕</button>
+    </div>
+    <div class="form-row">
+      <div class="form-group">
+        <label>Product Name</label>
+        <input type="text" id="pm-name" class="form-control" placeholder="Product name" />
+      </div>
+      <div class="form-group">
+        <label>Category</label>
+        <input type="text" id="pm-cat" class="form-control" placeholder="e.g. Cement, Steel" />
+      </div>
+    </div>
+    <div class="form-row">
+      <div class="form-group">
+        <label>Unit</label>
+        <input type="text" id="pm-unit" class="form-control" placeholder="e.g. bag, pc, kg" />
+      </div>
+      <div class="form-group">
+        <label>Icon (Emoji)</label>
+        <input type="text" id="pm-icon" class="form-control" placeholder="🧱" maxlength="4" />
+      </div>
+    </div>
+    <div class="form-row">
+      <div class="form-group">
+        <label>Selling Price (₱)</label>
+        <input type="number" id="pm-price" class="form-control" min="0" step="0.01" />
+      </div>
+      <div class="form-group">
+        <label>Cost Price (₱)</label>
+        <input type="number" id="pm-cost" class="form-control" min="0" step="0.01" />
+      </div>
+    </div>
+    <div class="form-row">
+      <div class="form-group">
+        <label>Initial Stock</label>
+        <input type="number" id="pm-stock" class="form-control" min="0" />
+      </div>
+      <div class="form-group" style="grid-column:1/-1;">
+        <label>Shelf Life / Longevity
+          <span style="font-weight:400;color:var(--text-muted);text-transform:none;">(optional)</span>
+        </label>
+        <div style="display:flex;gap:8px;">
+          <input type="number" id="pm-shelf-value" class="form-control" min="1" placeholder="e.g. 6"
+                 oninput="updateModalExpiryPreview()" />
+          <select id="pm-shelf-unit" class="form-control" onchange="updateModalExpiryPreview()">
+            <option value="">— select unit —</option>
+            <option value="days">Days</option>
+            <option value="weeks">Weeks</option>
+            <option value="months">Months</option>
+            <option value="years">Years</option>
+          </select>
+        </div>
+        <div id="pm-expiry-preview" style="margin-top:6px;padding:8px 12px;background:#f0f4f8;border-radius:7px;font-size:0.82rem;color:var(--text-muted);">
+          Enter a longevity to see the computed expiry date.
+        </div>
+      </div>
+    </div>
+    <input type="hidden" id="pm-id" />
+    <div class="modal-footer">
+      <button class="btn btn-outline" onclick="closeModal('product-modal')">Cancel</button>
+      <button class="btn btn-accent" onclick="saveProduct()">💾 Save Product</button>
+    </div>
+  </div>
+</div>
+
+<script src="app.js"></script>
+<script>
+const user = Auth.requireAny();
+document.getElementById('sidebar').innerHTML = buildSidebar(user.role, 'inventory');
+document.getElementById('role-badge').textContent = user.role === 'owner' ? 'Owner / Manager' : 'Staff';
+
+const isOwner = user.role === 'owner';
+
+if (isOwner) {
+  document.getElementById('owner-actions').innerHTML = `<button class="btn btn-accent" onclick="openAddProduct()">+ Add Product</button>`;
+  document.getElementById('action-th').textContent = 'Actions';
+}
+
+function getProducts() { return Store.get('products', []); }
+
+// ── Shelf-life helpers ────────────────────────────────────────────────────
+function calcExpiry(stockedDate, value, unit) {
+  if (!value || !unit) return null;
+  const d = new Date(stockedDate);
+  if (isNaN(d)) return null;
+  const v = parseInt(value);
+  if (!v || v <= 0) return null;
+  switch (unit) {
+    case 'days':   d.setDate(d.getDate() + v); break;
+    case 'weeks':  d.setDate(d.getDate() + v * 7); break;
+    case 'months': d.setMonth(d.getMonth() + v); break;
+    case 'years':  d.setFullYear(d.getFullYear() + v); break;
+    default: return null;
+  }
+  return d.toISOString().split('T')[0];
+}
+
+function shelfLifeLabel(sl) {
+  if (!sl || !sl.value || !sl.unit) return null;
+  const labels = { days:'day', weeks:'week', months:'month', years:'year' };
+  const base = labels[sl.unit] || sl.unit;
+  return `${sl.value} ${base}${sl.value > 1 ? 's' : ''}`;
+}
+
+function updateModalExpiryPreview() {
+  const val  = document.getElementById('pm-shelf-value').value;
+  const unit = document.getElementById('pm-shelf-unit').value;
+  const prev = document.getElementById('pm-expiry-preview');
+  if (!val || !unit) {
+    prev.textContent = 'Enter a longevity to see the computed expiry date.';
+    prev.style.color = 'var(--text-muted)';
+    return;
+  }
+  const expiry = calcExpiry(new Date().toISOString(), val, unit);
+  if (!expiry) { prev.textContent = 'Invalid duration.'; prev.style.color = 'var(--danger)'; return; }
+  const sl = shelfLifeLabel({ value: parseInt(val), unit });
+  prev.innerHTML = `📅 Expires <strong>${Util.fmtDate(expiry)}</strong> <span style="color:var(--text-muted);">(${sl} from today)</span>`;
+  prev.style.color = 'var(--text)';
+}
+
+// Returns expiry status: 'expired' | 'expiring' | 'fresh' | 'none'
+function expiryStatus(expiry) {
+  if (!expiry) return 'none';
+  const today = new Date(); today.setHours(0,0,0,0);
+  const exp   = new Date(expiry);
+  const diffDays = Math.ceil((exp - today) / (1000 * 60 * 60 * 24));
+  if (diffDays < 0)  return 'expired';
+  if (diffDays <= 30) return 'expiring';
+  return 'fresh';
+}
+
+function expiryBadge(expiry) {
+  const status = expiryStatus(expiry);
+  if (status === 'none')     return '<span class="badge badge-noexp">—</span>';
+  if (status === 'expired')  return '<span class="badge badge-expired">⛔ Expired</span>';
+  if (status === 'expiring') return '<span class="badge badge-expiring">⚠️ Expiring Soon</span>';
+  return '<span class="badge badge-fresh">✅ Fresh</span>';
+}
+
+function daysUntilExpiry(expiry) {
+  if (!expiry) return null;
+  const today = new Date(); today.setHours(0,0,0,0);
+  return Math.ceil((new Date(expiry) - today) / (1000 * 60 * 60 * 24));
+}
+
+function loadCategoryFilter() {
+  const cats = [...new Set(getProducts().map(p => p.category))].sort();
+  const sel = document.getElementById('inv-cat');
+  const cur = sel.value;
+  sel.innerHTML = '<option value="">All Categories</option>' + cats.map(c => `<option value="${c}" ${c===cur?'selected':''}>${c}</option>`).join('');
+}
+
+function renderStats() {
+  const products  = getProducts();
+  const totalVal  = products.reduce((a,p) => a + p.cost * p.stock, 0);
+  const lowCount  = products.filter(p => p.stock <= 20 && p.stock > 0).length;
+  const outCount  = products.filter(p => p.stock <= 0).length;
+  const expCount  = products.filter(p => expiryStatus(p.expiry) === 'expired').length;
+  const soonCount = products.filter(p => expiryStatus(p.expiry) === 'expiring').length;
+
+  document.getElementById('inv-stats').innerHTML = `
+    <div class="stat-card blue">
+      <div class="stat-label">Total Products</div>
+      <div class="stat-value">${products.length}</div>
+    </div>
+    <div class="stat-card green">
+      <div class="stat-label">Total Stock Value</div>
+      <div class="stat-value" style="font-size:1.3rem">${Util.fmtMoney(totalVal)}</div>
+      <div class="stat-sub">At cost price</div>
+    </div>
+    <div class="stat-card orange">
+      <div class="stat-label">Low Stock Items</div>
+      <div class="stat-value">${lowCount}</div>
+      <div class="stat-sub">≤ 20 units</div>
+    </div>
+    <div class="stat-card red">
+      <div class="stat-label">Out of Stock</div>
+      <div class="stat-value">${outCount}</div>
+    </div>
+    <div class="stat-card red">
+      <div class="stat-label">Expired Products</div>
+      <div class="stat-value">${expCount}</div>
+      <div class="stat-sub">Must be removed</div>
+    </div>
+    <div class="stat-card orange">
+      <div class="stat-label">Expiring Soon</div>
+      <div class="stat-value">${soonCount}</div>
+      <div class="stat-sub">Within 30 days</div>
+    </div>
+  `;
+}
+
+function renderTable() {
+  const search = document.getElementById('inv-search').value.toLowerCase();
+  const cat    = document.getElementById('inv-cat').value;
+  const sf     = document.getElementById('inv-stock-filter').value;
+  const ef     = document.getElementById('inv-exp-filter').value;
+
+  let products = getProducts().filter(p => {
+    const ms = p.name.toLowerCase().includes(search) || p.category.toLowerCase().includes(search);
+    const mc = !cat || p.category === cat;
+    const mf = !sf
+      || (sf==='low' && p.stock>0 && p.stock<=20)
+      || (sf==='out' && p.stock<=0)
+      || (sf==='ok'  && p.stock>20);
+    const es = expiryStatus(p.expiry);
+    const me = !ef || es === ef;
+    return ms && mc && mf && me;
+  });
+
+  const colSpan = isOwner ? 11 : 10;
+  const el = document.getElementById('inv-table');
+  el.innerHTML = products.map(p => {
+    const es = expiryStatus(p.expiry);
+    const rowClass = es === 'expired' ? 'row-expired' : es === 'expiring' ? 'row-expiring' : '';
+
+    const stockBadge = p.stock <= 0
+      ? `<span class="badge badge-red">Out of Stock</span>`
+      : p.stock <= 10
+        ? `<span class="badge badge-red">${p.stock} ${p.unit}</span>`
+        : p.stock <= 20
+          ? `<span class="badge badge-orange">${p.stock} ${p.unit}</span>`
+          : `<span class="badge badge-green">${p.stock} ${p.unit}</span>`;
+
+    const days = daysUntilExpiry(p.expiry);
+    const slLabel = shelfLifeLabel(p.shelfLife);
+    const expiryDateDisplay = p.expiry
+      ? `<span style="font-size:0.82rem;">${Util.fmtDate(p.expiry)}</span>
+         ${days !== null && days >= 0 ? `<br><span style="font-size:0.72rem;color:var(--text-muted);">${days === 0 ? 'Expires today' : days + 'd remaining'}</span>` : ''}
+         ${slLabel ? `<br><span style="font-size:0.72rem;color:var(--text-muted);">Shelf life: ${slLabel}</span>` : ''}`
+      : '<span style="color:var(--text-muted);">—</span>';
+
+    const actions = isOwner
+      ? `<td><div style="display:flex;gap:6px;">
+            <button class="btn btn-primary btn-sm" onclick="openEditProduct(${p.id})">✏️ Edit</button>
+            <button class="btn btn-danger btn-sm" onclick="deleteProduct(${p.id})">🗑</button>
+          </div></td>`
+      : '<td></td>';
+
+    return `<tr class="${rowClass}">
+      <td style="font-size:1.4rem;">${Icon.render(p.icon, '2rem')}</td>
+      <td><strong>${p.name}</strong></td>
+      <td><span class="badge badge-gray">${p.category}</span></td>
+      <td>${p.unit}</td>
+      <td>${stockBadge}</td>
+      <td>${expiryDateDisplay}</td>
+      <td>${expiryBadge(p.expiry)}</td>
+      <td>${Util.fmtMoney(p.price)}</td>
+      <td>${Util.fmtMoney(p.cost)}</td>
+      <td>${Util.fmtMoney(p.cost * p.stock)}</td>
+      ${actions}
+    </tr>`;
+  }).join('') || `<tr><td colspan="${colSpan}" style="text-align:center;padding:24px;color:var(--text-muted);">No products found.</td></tr>`;
+}
+
+function openAddProduct() {
+  document.getElementById('product-modal-title').textContent = '➕ Add Product';
+  document.getElementById('pm-id').value         = '';
+  document.getElementById('pm-name').value       = '';
+  document.getElementById('pm-cat').value        = '';
+  document.getElementById('pm-unit').value       = '';
+  document.getElementById('pm-icon').value       = '📦';
+  document.getElementById('pm-price').value      = '';
+  document.getElementById('pm-cost').value       = '';
+  document.getElementById('pm-stock').value      = '0';
+  document.getElementById('pm-shelf-value').value = '';
+  document.getElementById('pm-shelf-unit').value  = '';
+  document.getElementById('pm-expiry-preview').textContent = 'Enter a longevity to see the computed expiry date.';
+  document.getElementById('pm-expiry-preview').style.color = 'var(--text-muted)';
+  document.getElementById('product-modal').classList.add('open');
+}
+
+function openEditProduct(id) {
+  const p = getProducts().find(x => x.id === id);
+  if (!p) return;
+  document.getElementById('product-modal-title').textContent = '✏️ Edit Product';
+  document.getElementById('pm-id').value    = p.id;
+  document.getElementById('pm-name').value  = p.name;
+  document.getElementById('pm-cat').value   = p.category;
+  document.getElementById('pm-unit').value  = p.unit;
+  document.getElementById('pm-icon').value  = p.icon;
+  document.getElementById('pm-price').value = p.price;
+  document.getElementById('pm-cost').value  = p.cost;
+  document.getElementById('pm-stock').value = p.stock;
+  if (p.shelfLife) {
+    document.getElementById('pm-shelf-value').value = p.shelfLife.value;
+    document.getElementById('pm-shelf-unit').value  = p.shelfLife.unit;
+    updateModalExpiryPreview();
+  } else {
+    document.getElementById('pm-shelf-value').value = '';
+    document.getElementById('pm-shelf-unit').value  = '';
+    document.getElementById('pm-expiry-preview').textContent = 'Enter a longevity to see the computed expiry date.';
+    document.getElementById('pm-expiry-preview').style.color = 'var(--text-muted)';
+  }
+  document.getElementById('product-modal').classList.add('open');
+}
+
+function saveProduct() {
+  const id       = document.getElementById('pm-id').value;
+  const name     = document.getElementById('pm-name').value.trim();
+  const cat      = document.getElementById('pm-cat').value.trim();
+  const unit     = document.getElementById('pm-unit').value.trim();
+  const icon     = document.getElementById('pm-icon').value.trim() || '📦';
+  const price    = parseFloat(document.getElementById('pm-price').value) || 0;
+  const cost     = parseFloat(document.getElementById('pm-cost').value) || 0;
+  const stock    = parseInt(document.getElementById('pm-stock').value) || 0;
+  const shelfVal = document.getElementById('pm-shelf-value').value;
+  const shelfUnit= document.getElementById('pm-shelf-unit').value;
+
+  if (!name || !cat || !unit) { Util.toast('Fill in name, category, and unit.', 'warning'); return; }
+  if (shelfVal && !shelfUnit) { Util.toast('Select a shelf life unit.', 'warning'); return; }
+
+  const products = getProducts();
+  const stockedDate = id
+    ? (products.find(p => p.id == id)?.stockedDate || new Date().toISOString())
+    : new Date().toISOString();
+
+  const shelfLife = (shelfVal && shelfUnit) ? { value: parseInt(shelfVal), unit: shelfUnit } : null;
+  const expiry    = shelfLife ? calcExpiry(stockedDate, shelfLife.value, shelfLife.unit) : null;
+
+  if (id) {
+    const idx = products.findIndex(p => p.id == id);
+    if (idx > -1) products[idx] = { ...products[idx], name, category: cat, unit, icon, price, cost, stock, shelfLife, expiry, stockedDate };
+    Util.toast('Product updated.', 'success');
+  } else {
+    products.push({ id: Util.genId(), name, category: cat, unit, icon, price, cost, stock, shelfLife, expiry, stockedDate });
+    Util.toast('Product added.', 'success');
+  }
+  Store.set('products', products);
+  closeModal('product-modal');
+  loadCategoryFilter();
+  renderStats();
+  renderTable();
+}
+
+function deleteProduct(id) {
+  if (!Util.confirm('Delete this product? This cannot be undone.')) return;
+  Store.set('products', getProducts().filter(p => p.id !== id));
+  Util.toast('Product deleted.', 'danger');
+  loadCategoryFilter();
+  renderStats();
+  renderTable();
+}
+
+function closeModal(id) { document.getElementById(id).classList.remove('open'); }
+
+// Init
+loadCategoryFilter();
+renderStats();
+renderTable();
+</script>
+</body>
+</html>

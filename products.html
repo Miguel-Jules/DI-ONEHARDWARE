@@ -1,0 +1,683 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Products – DI-One Hardware</title>
+  <link rel="stylesheet" href="css/style.css" />
+  <style>
+    .product-layout {
+      display: grid;
+      grid-template-columns: 380px 1fr;
+      gap: 22px;
+      align-items: start;
+    }
+    .icon-picker {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 6px;
+      margin-top: 6px;
+    }
+    .icon-btn {
+      font-size: 1.3rem;
+      width: 44px; height: 44px;
+      border: 2px solid var(--border);
+      border-radius: 10px;
+      background: #fff;
+      cursor: pointer;
+      display: flex; align-items: center; justify-content: center;
+      transition: all 0.15s;
+      overflow: hidden;
+      padding: 3px;
+    }
+    .icon-btn img {
+      width: 100%; height: 100%;
+      object-fit: contain;
+      border-radius: 6px;
+    }
+    .icon-btn:hover  { border-color: var(--accent); background: #fff7ed; }
+    .icon-btn.active { border-color: var(--accent); background: #fff7ed; }
+    .product-card-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+      gap: 14px;
+    }
+    .prod-item {
+      background: #fff;
+      border: 1.5px solid var(--border);
+      border-radius: var(--radius);
+      padding: 16px;
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+      transition: box-shadow 0.18s;
+    }
+    .prod-item:hover { box-shadow: var(--shadow); }
+    .prod-item-icon  { font-size: 2rem; }
+    .prod-item-name  { font-weight: 700; font-size: 0.92rem; color: var(--text); }
+    .prod-item-price { font-size: 0.88rem; color: var(--accent); font-weight: 600; }
+    .prod-item-actions { display: flex; gap: 6px; margin-top: 6px; }
+    .quick-stock { display:flex; gap:8px; margin-top:auto; padding-top:12px; }
+    .quick-stock input { width:70px; min-width:0; text-align:center; }
+    .quick-stock button { flex:1; justify-content:center; min-height:44px; }
+    .quick-stock button:focus-visible { outline:3px solid #2563eb; outline-offset:2px; }
+    .expiry-preview {
+      background: #f0f4f8;
+      border-radius: 7px;
+      padding: 9px 12px;
+      font-size: 0.82rem;
+      color: var(--text-muted);
+      margin-top: 4px;
+      min-height: 36px;
+    }
+    .shelf-unit-row { display: flex; gap: 8px; }
+    .shelf-unit-row input  { flex: 1; }
+    .shelf-unit-row select { flex: 1; }
+    #img-upload-area:hover {
+      border-color: var(--accent) !important;
+      background: #fff7ed !important;
+    }
+    @media(max-width:900px){ .product-layout{ grid-template-columns:1fr; } }
+  </style>
+</head>
+<body>
+<div class="app-wrapper">
+  <aside class="sidebar" id="sidebar"></aside>
+  <div class="main-content">
+    <div class="topbar">
+      <h1>🏷️ Product Management</h1>
+      <div class="topbar-right">
+        <span class="badge badge-blue">Owner / Manager</span>
+      </div>
+    </div>
+    <div class="page-body">
+
+      <div class="product-layout">
+
+        <!-- LEFT: Add / Edit form -->
+        <div>
+          <div class="card" style="position:sticky;top:80px;">
+            <div class="card-title" id="form-title">➕ Add New Product</div>
+
+            <div class="form-group">
+              <label>Product Name</label>
+              <input type="text" id="p-name" class="form-control" placeholder="e.g. Portland Cement 40kg" />
+            </div>
+
+            <div class="form-row">
+              <div class="form-group">
+                <label>Category</label>
+                <input type="text" id="p-cat" class="form-control" placeholder="e.g. Cement, Steel" list="cat-suggestions" />
+                <datalist id="cat-suggestions"></datalist>
+              </div>
+              <div class="form-group">
+                <label>Unit</label>
+                <input type="text" id="p-unit" class="form-control" placeholder="e.g. bag, pc, kg" />
+              </div>
+            </div>
+
+            <div class="form-row">
+              <div class="form-group">
+                <label>Selling Price (₱)</label>
+                <input type="number" id="p-price" class="form-control" min="0" step="0.01" placeholder="0.00" />
+              </div>
+              <div class="form-group">
+                <label>Cost Price (₱)</label>
+                <input type="number" id="p-cost" class="form-control" min="0" step="0.01" placeholder="0.00" />
+              </div>
+            </div>
+
+            <div class="form-group">
+              <label>Initial Stock</label>
+              <input type="number" id="p-stock" class="form-control" min="0" value="0" />
+            </div>
+
+            <!-- Longevity / Shelf Life -->
+            <div class="form-group">
+              <label>
+                Shelf Life / Longevity
+                <span style="font-weight:400;color:var(--text-muted);text-transform:none;">(optional)</span>
+              </label>
+              <div class="shelf-unit-row">
+                <input type="number" id="p-shelf-value" class="form-control" min="1" placeholder="e.g. 6"
+                       oninput="updateExpiryPreview()" />
+                <select id="p-shelf-unit" class="form-control" onchange="updateExpiryPreview()">
+                  <option value="">— select unit —</option>
+                  <option value="days">Days</option>
+                  <option value="weeks">Weeks</option>
+                  <option value="months">Months</option>
+                  <option value="years">Years</option>
+                </select>
+              </div>
+              <div class="expiry-preview" id="expiry-preview">
+                Enter a longevity to see the computed expiry date.
+              </div>
+            </div>
+
+            <div class="form-group">
+              <label>Product Image</label>
+
+              <!-- Upload area -->
+              <div id="img-upload-area" onclick="document.getElementById('p-img-file').click()"
+                   style="border:2px dashed var(--border);border-radius:10px;padding:18px;text-align:center;cursor:pointer;background:#f8fafc;transition:all 0.2s;margin-bottom:10px;"
+                   ondragover="event.preventDefault();this.style.borderColor='var(--accent)'"
+                   ondragleave="this.style.borderColor='var(--border)'"
+                   ondrop="handleImgDrop(event)">
+                <div id="img-upload-placeholder">
+                  <div style="font-size:2rem;margin-bottom:6px;">📷</div>
+                  <div style="font-size:0.84rem;font-weight:600;color:var(--primary);">Click or drag & drop to upload</div>
+                  <div style="font-size:0.75rem;color:var(--text-muted);margin-top:2px;">JPG, PNG, WEBP — max 2MB</div>
+                </div>
+                <img id="img-upload-preview" src="" alt="Preview"
+                     style="display:none;max-height:120px;max-width:100%;border-radius:8px;object-fit:contain;" />
+              </div>
+              <input type="file" id="p-img-file" accept="image/*" style="display:none;" onchange="handleImgUpload(event)" />
+
+              <!-- Remove image button -->
+              <button type="button" id="img-remove-btn" onclick="removeImage()"
+                      class="btn btn-outline btn-sm" style="display:none;margin-bottom:10px;">
+                🗑 Remove Image
+              </button>
+
+              <!-- OR divider -->
+              <div style="display:flex;align-items:center;gap:8px;margin-bottom:10px;">
+                <div style="flex:1;height:1px;background:var(--border);"></div>
+                <span style="font-size:0.75rem;color:var(--text-muted);font-weight:500;">OR pick from library</span>
+                <div style="flex:1;height:1px;background:var(--border);"></div>
+              </div>
+
+              <!-- Icon picker (existing images library) -->
+              <div id="icon-preview" style="display:flex;align-items:center;gap:10px;padding:8px 10px;border:1.5px solid var(--border);border-radius:7px;background:#f8fafc;margin-bottom:8px;min-height:46px;">
+                <span id="icon-preview-img">📦</span>
+                <span id="icon-preview-label" style="font-size:0.78rem;color:var(--text-muted);">No icon selected</span>
+              </div>
+              <input type="hidden" id="p-icon" />
+              <div class="icon-picker" id="icon-picker"></div>
+            </div>
+
+            <input type="hidden" id="p-id" />
+            <input type="hidden" id="p-stocked-date" />
+
+            <div style="display:flex;gap:10px;margin-top:6px;">
+              <button class="btn btn-accent btn-lg" onclick="saveProduct()"
+                      style="flex:1;justify-content:center;" id="save-btn">
+                💾 Save Product
+              </button>
+              <button class="btn btn-outline" onclick="resetForm()" id="cancel-btn" style="display:none;">
+                ✕ Cancel
+              </button>
+            </div>
+          </div>
+        </div>
+
+        <!-- RIGHT: Product catalog -->
+        <div>
+          <div class="card" style="margin-bottom:16px;">
+            <div class="section-header" style="margin:0;">
+              <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;">
+                <input type="text" id="search-input" class="form-control"
+                       placeholder="🔍 Search products..." oninput="renderCatalog()" style="width:200px;" />
+                <select id="cat-filter" class="form-control" style="width:auto;" onchange="renderCatalog()">
+                  <option value="">All Categories</option>
+                </select>
+              </div>
+              <div id="product-count" style="font-size:0.82rem;color:var(--text-muted);"></div>
+            </div>
+          </div>
+
+          <div class="product-card-grid" id="product-catalog"></div>
+        </div>
+
+      </div>
+    </div>
+  </div>
+</div>
+
+<script src="app.js"></script>
+<script>
+const user = Auth.require('owner');
+document.getElementById('sidebar').innerHTML = buildSidebar('owner', 'products');
+
+const ICONS = [
+  // ── Your actual product photos (from images/ folder) ──
+  'images/cement.jpg',        // Portland Cement
+  'images/rebar.jpg',         // Deformed Bar / Steel
+  'images/hollow-block.jpg',  // Hollow Block
+  'images/sand.jpg',          // Sand
+  'images/gravel.jpg',        // Gravel
+  'images/plywood.jpg',       // Plywood
+  'images/pvc.jpg',           // PVC Pipe
+  'images/gi-wire.jpg',       // GI Wire
+  'images/paint.jpg',         // Paint
+  'images/roofing-nail.jpg',  // Roofing Nail
+];
+
+// ── Shelf-life helpers ─────────────────────────────────────────────────────
+
+/**
+ * Compute expiry date string 'YYYY-MM-DD' from a stocked date + shelf life.
+ * @param {string|number} stockedDate  – ISO string or timestamp of when product was stocked
+ * @param {number}        value        – longevity amount
+ * @param {string}        unit         – 'days' | 'weeks' | 'months' | 'years'
+ * @returns {string|null}
+ */
+function calcExpiry(stockedDate, value, unit) {
+  if (!value || !unit) return null;
+  const d = new Date(stockedDate);
+  if (isNaN(d)) return null;
+  const v = parseInt(value);
+  if (!v || v <= 0) return null;
+  switch (unit) {
+    case 'days':   d.setDate(d.getDate() + v); break;
+    case 'weeks':  d.setDate(d.getDate() + v * 7); break;
+    case 'months': d.setMonth(d.getMonth() + v); break;
+    case 'years':  d.setFullYear(d.getFullYear() + v); break;
+    default: return null;
+  }
+  return d.toISOString().split('T')[0]; // 'YYYY-MM-DD'
+}
+
+function shelfLifeLabel(value, unit) {
+  if (!value || !unit) return '';
+  const labels = { days:'day', weeks:'week', months:'month', years:'year' };
+  const base = labels[unit] || unit;
+  return `${value} ${base}${value > 1 ? 's' : ''}`;
+}
+
+function updateExpiryPreview() {
+  const val  = document.getElementById('p-shelf-value').value;
+  const unit = document.getElementById('p-shelf-unit').value;
+  const prev = document.getElementById('expiry-preview');
+
+  if (!val || !unit) {
+    prev.textContent = 'Enter a longevity to see the computed expiry date.';
+    prev.style.color = 'var(--text-muted)';
+    return;
+  }
+
+  const today   = new Date().toISOString();
+  const expiry  = calcExpiry(today, val, unit);
+  const label   = shelfLifeLabel(val, unit);
+
+  if (!expiry) {
+    prev.textContent = 'Invalid duration.';
+    prev.style.color = 'var(--danger)';
+    return;
+  }
+
+  prev.innerHTML = `📅 Expires <strong>${Util.fmtDate(expiry)}</strong>
+    <span style="color:var(--text-muted);margin-left:6px;">(${label} from today)</span>`;
+  prev.style.color = 'var(--text)';
+}
+
+function expiryStatus(expiry) {
+  if (!expiry) return 'none';
+  const today = new Date(); today.setHours(0,0,0,0);
+  const diffDays = Math.ceil((new Date(expiry) - today) / (1000 * 60 * 60 * 24));
+  if (diffDays < 0)   return 'expired';
+  if (diffDays <= 30) return 'expiring';
+  return 'fresh';
+}
+
+function expiryLabel(p) {
+  if (!p.expiry) return '';
+  const s = expiryStatus(p.expiry);
+  const days = Math.ceil((new Date(p.expiry) - new Date().setHours(0,0,0,0)) / 86400000);
+  const shelf = p.shelfLife ? `<span style="color:var(--text-muted);"> · Shelf life: ${shelfLifeLabel(p.shelfLife.value, p.shelfLife.unit)}</span>` : '';
+
+  const styles = {
+    expired:  'background:#fce4e4;color:#b91c1c;',
+    expiring: 'background:#fef9c3;color:#854d0e;',
+    fresh:    'background:#dcfce7;color:#15803d;',
+  };
+  const icons   = { expired:'⛔', expiring:'⏳', fresh:'✅' };
+  const dLabel  = s === 'expired' ? 'Expired' : `${days}d left`;
+
+  return `<div style="font-size:0.75rem;margin-top:2px;">
+    <span style="padding:2px 7px;border-radius:99px;font-weight:600;${styles[s]}">
+      ${icons[s]} ${Util.fmtDate(p.expiry)} · ${dLabel}
+    </span>${shelf}
+  </div>`;
+}
+
+// ── Image Upload ───────────────────────────────────────────────────────────
+
+function handleImgUpload(event) {
+  const file = event.target.files[0];
+  if (!file) return;
+  processImageFile(file);
+}
+
+function handleImgDrop(event) {
+  event.preventDefault();
+  document.getElementById('img-upload-area').style.borderColor = 'var(--border)';
+  const file = event.dataTransfer.files[0];
+  if (!file || !file.type.startsWith('image/')) {
+    Util.toast('Please drop an image file.', 'warning');
+    return;
+  }
+  processImageFile(file);
+}
+
+function processImageFile(file) {
+  if (file.size > 2 * 1024 * 1024) {
+    Util.toast('Image too large. Max 2MB.', 'warning');
+    return;
+  }
+  const reader = new FileReader();
+  reader.onload = function(e) {
+    const dataUrl = e.target.result;
+    // Set as the icon
+    document.getElementById('p-icon').value = dataUrl;
+    // Show preview
+    const preview = document.getElementById('img-upload-preview');
+    const placeholder = document.getElementById('img-upload-placeholder');
+    preview.src = dataUrl;
+    preview.style.display = 'block';
+    placeholder.style.display = 'none';
+    document.getElementById('img-remove-btn').style.display = '';
+    // Also update icon preview label
+    document.getElementById('icon-preview-img').innerHTML =
+      `<img src="${dataUrl}" style="width:36px;height:36px;object-fit:contain;border-radius:6px;" />`;
+    document.getElementById('icon-preview-label').textContent = file.name;
+    // Deselect any picker icon
+    document.querySelectorAll('.icon-btn').forEach(b => b.classList.remove('active'));
+    Util.toast('Image uploaded!', 'success');
+  };
+  reader.readAsDataURL(file);
+}
+
+function removeImage() {
+  document.getElementById('p-icon').value = '';
+  document.getElementById('p-img-file').value = '';
+  const preview = document.getElementById('img-upload-preview');
+  preview.src = '';
+  preview.style.display = 'none';
+  document.getElementById('img-upload-placeholder').style.display = '';
+  document.getElementById('img-remove-btn').style.display = 'none';
+  document.getElementById('icon-preview-img').innerHTML = '📦';
+  document.getElementById('icon-preview-label').textContent = 'No icon selected';
+}
+
+function restoreUploadPreview(iconVal) {
+  if (!iconVal) return;
+  const preview = document.getElementById('img-upload-preview');
+  const placeholder = document.getElementById('img-upload-placeholder');
+  // If it's a data URL or a file path (not a picker icon), show in upload area
+  if (iconVal.startsWith('data:') || /\.(jpg|jpeg|png|gif|webp)$/i.test(iconVal)) {
+    preview.src = iconVal;
+    preview.style.display = 'block';
+    placeholder.style.display = 'none';
+    document.getElementById('img-remove-btn').style.display = '';
+  } else {
+    preview.style.display = 'none';
+    placeholder.style.display = '';
+    document.getElementById('img-remove-btn').style.display = 'none';
+  }
+}
+
+function buildIconPicker(selected) {
+  document.getElementById('icon-picker').innerHTML = ICONS.map(ic => {
+    const isUrl = /\.(jpg|jpeg|png|gif|webp|svg)$/i.test(ic) || ic.startsWith('http');
+    const content = isUrl
+      ? `<img src="${ic}" alt="icon" style="width:32px;height:32px;object-fit:contain;" />`
+      : ic;
+    return `<button type="button" class="icon-btn ${ic === selected ? 'active' : ''}"
+            onclick="pickIcon('${ic}')" title="${ic}">${content}</button>`;
+  }).join('');
+}
+
+function pickIcon(ic) {
+  document.getElementById('p-icon').value = ic;
+  // Update preview
+  const previewImg = document.getElementById('icon-preview-img');
+  const previewLabel = document.getElementById('icon-preview-label');
+  const isUrl = /\.(jpg|jpeg|png|gif|webp|svg)$/i.test(ic) || ic.startsWith('http');
+  if (isUrl) {
+    previewImg.innerHTML = `<img src="${ic}" style="width:36px;height:36px;object-fit:contain;border-radius:6px;" />`;
+    previewLabel.textContent = ic.split('/').pop().replace(/\.[^.]+$/, '').replace(/-/g, ' ');
+  } else {
+    previewImg.innerHTML = `<span style="font-size:1.8rem;">${ic}</span>`;
+    previewLabel.textContent = ic;
+  }
+  document.querySelectorAll('.icon-btn').forEach(b => {
+    const btnIc = b.getAttribute('onclick').match(/'([^']+)'/)?.[1];
+    b.classList.toggle('active', btnIc === ic);
+  });
+}
+
+function syncIconInput() {
+  // kept for compatibility — no-op since input is now hidden
+}
+
+// ── Category suggestions ───────────────────────────────────────────────────
+
+function loadCatSuggestions() {
+  const cats = [...new Set(Store.get('products', []).map(p => p.category))].sort();
+  document.getElementById('cat-suggestions').innerHTML = cats.map(c => `<option value="${c}">`).join('');
+  const sel = document.getElementById('cat-filter');
+  const cur = sel.value;
+  sel.innerHTML = '<option value="">All Categories</option>'
+    + cats.map(c => `<option value="${c}" ${c===cur?'selected':''}>${c}</option>`).join('');
+}
+
+// ── Catalog render ─────────────────────────────────────────────────────────
+
+function renderCatalog() {
+  const search = document.getElementById('search-input').value.toLowerCase();
+  const cat    = document.getElementById('cat-filter').value;
+
+  const products = Store.get('products', []).filter(p => {
+    const ms = p.name.toLowerCase().includes(search) || p.category.toLowerCase().includes(search);
+    const mc = !cat || p.category === cat;
+    return ms && mc;
+  });
+
+  document.getElementById('product-count').textContent = `${products.length} product(s)`;
+
+  const grid = document.getElementById('product-catalog');
+  if (!products.length) {
+    grid.innerHTML = `<div style="grid-column:1/-1;text-align:center;padding:40px;color:var(--text-muted);">
+      No products found. Use the form to add your first product.
+    </div>`;
+    return;
+  }
+
+  grid.innerHTML = products.map(p => {
+    const stockColor = p.stock <= 0 ? 'var(--danger)' : p.stock <= 20 ? 'var(--warning)' : 'var(--success)';
+    return `
+      <div class="prod-item">
+        <div class="prod-item-icon">${Icon.render(p.icon, '2rem')}</div>
+        <div class="prod-item-name">${p.name}</div>
+        <div><span class="badge badge-gray">${p.category}</span></div>
+        <div class="prod-item-price">${Util.fmtMoney(p.price)}
+          <span style="font-size:0.75rem;color:var(--text-muted);font-weight:400;">/ ${p.unit}</span>
+        </div>
+        <div style="font-size:0.78rem;color:${stockColor};">
+          ${p.stock <= 0 ? '❌ Out of stock' : `📦 ${p.stock} ${p.unit} in stock`}
+        </div>
+        <div style="font-size:0.78rem;color:var(--text-muted);">Cost: ${Util.fmtMoney(p.cost)}</div>
+        ${expiryLabel(p)}
+        <div class="prod-item-actions">
+          <button class="btn btn-primary btn-sm" style="flex:1;justify-content:center;"
+                  onclick="editProduct(${p.id})">✏️ Edit</button>
+          <button class="btn btn-danger btn-sm" onclick="deleteProduct(${p.id})">🗑</button>
+        </div>
+        <form class="quick-stock" onsubmit="event.preventDefault(); addStock(${p.id}, this)">
+          <input type="number" class="form-control" name="quantity" value="1" min="1" step="1"
+                 required aria-label="Quantity to add" title="Quantity to add" />
+          <button type="submit" class="btn btn-accent" title="Add stock">
+            <span aria-hidden="true" style="font-size:1.4rem;font-weight:700;">+</span> Add Stock
+          </button>
+        </form>
+      </div>
+    `;
+  }).join('');
+}
+
+// Add stock directly from an existing product card.
+function addStock(id, form) {
+  const input = form.elements.quantity;
+  const quantity = Number(input.value);
+  if (!Number.isSafeInteger(quantity) || quantity <= 0) {
+    Util.toast('Enter a whole quantity greater than 0.', 'warning');
+    input.focus();
+    return;
+  }
+  const products = Store.get('products', []);
+  const product = products.find(p => p.id === id);
+  if (!product) {
+    Util.toast('Product no longer exists. Refresh the catalog.', 'warning');
+    renderCatalog();
+    return;
+  }
+  const stock = Number(product.stock);
+  if (!Number.isSafeInteger(stock) || stock < 0 || !Number.isSafeInteger(stock + quantity)) {
+    Util.toast('Stock quantity is invalid or too large.', 'warning');
+    return;
+  }
+  product.stock = stock + quantity;
+  try {
+    Store.set('products', products);
+  } catch (error) {
+    Util.toast('Stock could not be saved. Please try again.', 'warning');
+    return;
+  }
+  // Keep an open edit form in sync so saving it cannot undo this addition.
+  if (document.getElementById('p-id').value == id) {
+    document.getElementById('p-stock').value = product.stock;
+  }
+  renderCatalog();
+  Util.toast(`Added ${quantity} ${product.unit} to "${product.name}". Stock: ${product.stock}.`, 'success');
+}
+
+// ── Form helpers ───────────────────────────────────────────────────────────
+
+function resetForm() {
+  document.getElementById('p-id').value          = '';
+  document.getElementById('p-name').value        = '';
+  document.getElementById('p-cat').value         = '';
+  document.getElementById('p-unit').value        = '';
+  document.getElementById('p-price').value       = '';
+  document.getElementById('p-cost').value        = '';
+  document.getElementById('p-stock').value       = '0';
+  document.getElementById('p-shelf-value').value = '';
+  document.getElementById('p-shelf-unit').value  = '';
+  document.getElementById('p-icon').value        = '';
+  document.getElementById('icon-preview-img').innerHTML = '<span style="font-size:1.8rem;">📦</span>';
+  document.getElementById('icon-preview-label').textContent = 'No icon selected';
+  // Reset upload area
+  document.getElementById('p-img-file').value = '';
+  const prev = document.getElementById('img-upload-preview');
+  prev.src = ''; prev.style.display = 'none';
+  document.getElementById('img-upload-placeholder').style.display = '';
+  document.getElementById('img-remove-btn').style.display = 'none';
+  document.getElementById('p-stocked-date').value = '';
+  document.getElementById('expiry-preview').textContent = 'Enter a longevity to see the computed expiry date.';
+  document.getElementById('expiry-preview').style.color = 'var(--text-muted)';
+  document.getElementById('form-title').textContent = '➕ Add New Product';
+  document.getElementById('save-btn').innerHTML  = '💾 Save Product';
+  document.getElementById('cancel-btn').style.display = 'none';
+  buildIconPicker('');
+  window.scrollTo({ top: 0, behavior: 'smooth' });
+}
+
+function editProduct(id) {
+  const p = Store.get('products', []).find(x => x.id === id);
+  if (!p) return;
+
+  document.getElementById('p-id').value    = p.id;
+  document.getElementById('p-name').value  = p.name;
+  document.getElementById('p-cat').value   = p.category;
+  document.getElementById('p-unit').value  = p.unit;
+  document.getElementById('p-price').value = p.price;
+  document.getElementById('p-cost').value  = p.cost;
+  document.getElementById('p-stock').value = p.stock;
+  document.getElementById('p-icon').value  = p.icon;
+  if (p.icon) pickIcon(p.icon);
+  restoreUploadPreview(p.icon);
+  document.getElementById('p-stocked-date').value = p.stockedDate || new Date().toISOString();
+
+  if (p.shelfLife) {
+    document.getElementById('p-shelf-value').value = p.shelfLife.value;
+    document.getElementById('p-shelf-unit').value  = p.shelfLife.unit;
+  } else {
+    document.getElementById('p-shelf-value').value = '';
+    document.getElementById('p-shelf-unit').value  = '';
+  }
+  updateExpiryPreview();
+
+  document.getElementById('form-title').textContent  = `✏️ Editing: ${p.name}`;
+  document.getElementById('save-btn').innerHTML       = '💾 Update Product';
+  document.getElementById('cancel-btn').style.display = '';
+  buildIconPicker(p.icon);
+  window.scrollTo({ top: 0, behavior: 'smooth' });
+}
+
+function saveProduct() {
+  const id          = document.getElementById('p-id').value;
+  const name        = document.getElementById('p-name').value.trim();
+  const cat         = document.getElementById('p-cat').value.trim();
+  const unit        = document.getElementById('p-unit').value.trim();
+  const icon        = document.getElementById('p-icon').value.trim() || '📦';
+  const price       = parseFloat(document.getElementById('p-price').value) || 0;
+  const cost        = parseFloat(document.getElementById('p-cost').value) || 0;
+  const stock       = parseInt(document.getElementById('p-stock').value) || 0;
+  const shelfVal    = document.getElementById('p-shelf-value').value;
+  const shelfUnit   = document.getElementById('p-shelf-unit').value;
+
+  if (!name)      { Util.toast('Product name is required.', 'warning');  document.getElementById('p-name').focus(); return; }
+  if (!cat)       { Util.toast('Category is required.', 'warning');      document.getElementById('p-cat').focus();  return; }
+  if (!unit)      { Util.toast('Unit is required.', 'warning');          document.getElementById('p-unit').focus(); return; }
+  if (price <= 0) { Util.toast('Selling price must be greater than 0.', 'warning'); document.getElementById('p-price').focus(); return; }
+  if (shelfVal && !shelfUnit) { Util.toast('Select a shelf life unit (days/weeks/months/years).', 'warning'); return; }
+
+  // Compute expiry from shelf life
+  const stockedDate = id
+    ? (document.getElementById('p-stocked-date').value || new Date().toISOString())
+    : new Date().toISOString();
+
+  const shelfLife = (shelfVal && shelfUnit) ? { value: parseInt(shelfVal), unit: shelfUnit } : null;
+  const expiry    = shelfLife ? calcExpiry(stockedDate, shelfLife.value, shelfLife.unit) : null;
+
+  const products = Store.get('products', []);
+
+  if (id) {
+    const idx = products.findIndex(p => p.id == id);
+    if (idx > -1) {
+      products[idx] = { ...products[idx], name, category: cat, unit, icon, price, cost, stock, shelfLife, expiry, stockedDate };
+      Util.toast(`"${name}" updated successfully.`, 'success');
+    }
+  } else {
+    if (products.find(p => p.name.toLowerCase() === name.toLowerCase())) {
+      Util.toast('A product with this name already exists.', 'warning');
+      return;
+    }
+    products.push({ id: Util.genId(), name, category: cat, unit, icon, price, cost, stock, shelfLife, expiry, stockedDate });
+    Util.toast(`"${name}" added to the catalog.`, 'success');
+  }
+
+  Store.set('products', products);
+  resetForm();
+  loadCatSuggestions();
+  renderCatalog();
+}
+
+function deleteProduct(id) {
+  const p = Store.get('products', []).find(x => x.id === id);
+  if (!p) return;
+  if (!Util.confirm(`Delete "${p.name}"? This cannot be undone.`)) return;
+  Store.set('products', Store.get('products', []).filter(x => x.id !== id));
+  Util.toast(`"${p.name}" deleted.`, 'danger');
+  loadCatSuggestions();
+  renderCatalog();
+  if (document.getElementById('p-id').value == id) resetForm();
+}
+
+// ── Init ───────────────────────────────────────────────────────────────────
+buildIconPicker('');
+loadCatSuggestions();
+renderCatalog();
+</script>
+</body>
+</html>

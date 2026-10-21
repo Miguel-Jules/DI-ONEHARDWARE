@@ -1,0 +1,197 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>User Access – DI-One Hardware</title>
+  <link rel="stylesheet" href="css/style.css" />
+</head>
+<body>
+<div class="app-wrapper">
+  <aside class="sidebar" id="sidebar"></aside>
+  <div class="main-content">
+    <div class="topbar">
+      <h1>👥 User Access Management</h1>
+      <div class="topbar-right">
+        <span class="badge badge-blue">Owner / Manager</span>
+      </div>
+    </div>
+    <div class="page-body">
+
+      <div class="card">
+        <div class="section-header">
+          <div class="card-title" style="margin:0">👤 System Users</div>
+          <button class="btn btn-accent" onclick="openAddUser()">+ Add User</button>
+        </div>
+        <div class="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th>Name</th>
+                <th>Username</th>
+                <th>Role</th>
+                <th>Status</th>
+                <th>Actions</th>
+              </tr>
+            </thead>
+            <tbody id="users-table"></tbody>
+          </table>
+        </div>
+      </div>
+
+    </div>
+  </div>
+</div>
+
+<!-- Add/Edit User Modal -->
+<div class="modal-overlay" id="user-modal">
+  <div class="modal">
+    <div class="modal-header">
+      <span class="modal-title" id="user-modal-title">Add User</span>
+      <button class="modal-close" onclick="closeModal('user-modal')">✕</button>
+    </div>
+    <div class="form-row">
+      <div class="form-group">
+        <label>Full Name</label>
+        <input type="text" id="um-name" class="form-control" placeholder="Full name" />
+      </div>
+      <div class="form-group">
+        <label>Username</label>
+        <input type="text" id="um-username" class="form-control" placeholder="username" autocomplete="off" />
+      </div>
+    </div>
+    <div class="form-row">
+      <div class="form-group">
+        <label>Password</label>
+        <input type="password" id="um-password" class="form-control" placeholder="Leave blank to keep current" autocomplete="new-password" />
+      </div>
+      <div class="form-group">
+        <label>Role</label>
+        <select id="um-role" class="form-control">
+          <option value="staff">Staff</option>
+          <option value="owner">Owner / Manager</option>
+        </select>
+      </div>
+    </div>
+    <div class="form-group">
+      <label>Status</label>
+      <select id="um-active" class="form-control">
+        <option value="1">Active</option>
+        <option value="0">Inactive</option>
+      </select>
+    </div>
+    <input type="hidden" id="um-id" />
+    <div class="modal-footer">
+      <button class="btn btn-outline" onclick="closeModal('user-modal')">Cancel</button>
+      <button class="btn btn-accent" onclick="saveUser()">💾 Save User</button>
+    </div>
+  </div>
+</div>
+
+<script src="app.js"></script>
+<script>
+const user = Auth.require('owner');
+document.getElementById('sidebar').innerHTML = buildSidebar('owner', 'users');
+
+function getUsers() { return Store.get('users', []); }
+
+function renderTable() {
+  const users = getUsers();
+  document.getElementById('users-table').innerHTML = users.map(u => `
+    <tr>
+      <td><strong>${u.name}</strong></td>
+      <td><code>${u.username}</code></td>
+      <td>${u.role === 'owner'
+        ? '<span class="badge badge-blue">👑 Owner</span>'
+        : '<span class="badge badge-gray">🧑‍💼 Staff</span>'}</td>
+      <td>${u.active
+        ? '<span class="badge badge-green">Active</span>'
+        : '<span class="badge badge-red">Inactive</span>'}</td>
+      <td>
+        <div style="display:flex;gap:6px;">
+          <button class="btn btn-primary btn-sm" onclick="openEditUser(${u.id})">✏️ Edit</button>
+          ${u.username !== 'owner'
+            ? `<button class="btn btn-danger btn-sm" onclick="deleteUser(${u.id})">🗑</button>`
+            : ''}
+        </div>
+      </td>
+    </tr>
+  `).join('');
+}
+
+function openAddUser() {
+  document.getElementById('user-modal-title').textContent = '➕ Add User';
+  document.getElementById('um-id').value = '';
+  document.getElementById('um-name').value = '';
+  document.getElementById('um-username').value = '';
+  document.getElementById('um-password').value = '';
+  document.getElementById('um-role').value = 'staff';
+  document.getElementById('um-active').value = '1';
+  document.getElementById('user-modal').classList.add('open');
+}
+
+function openEditUser(id) {
+  const u = getUsers().find(x => x.id === id);
+  if (!u) return;
+  document.getElementById('user-modal-title').textContent = '✏️ Edit User';
+  document.getElementById('um-id').value = u.id;
+  document.getElementById('um-name').value = u.name;
+  document.getElementById('um-username').value = u.username;
+  document.getElementById('um-password').value = '';
+  document.getElementById('um-role').value = u.role;
+  document.getElementById('um-active').value = u.active ? '1' : '0';
+  document.getElementById('user-modal').classList.add('open');
+}
+
+function saveUser() {
+  const id       = document.getElementById('um-id').value;
+  const name     = document.getElementById('um-name').value.trim();
+  const username = document.getElementById('um-username').value.trim();
+  const password = document.getElementById('um-password').value.trim();
+  const role     = document.getElementById('um-role').value;
+  const active   = document.getElementById('um-active').value === '1';
+
+  if (!name || !username) { Util.toast('Name and username are required.', 'warning'); return; }
+
+  const users = getUsers();
+
+  if (id) {
+    const idx = users.findIndex(u => u.id == id);
+    if (idx > -1) {
+      const existing = users[idx];
+      const duplicate = users.find(u => u.username === username && u.id != id);
+      if (duplicate) { Util.toast('Username already taken.', 'warning'); return; }
+      users[idx] = {
+        ...existing, name, username, role, active,
+        password: password || existing.password
+      };
+      Util.toast('User updated.', 'success');
+    }
+  } else {
+    if (!password) { Util.toast('Password is required for new users.', 'warning'); return; }
+    if (users.find(u => u.username === username)) { Util.toast('Username already taken.', 'warning'); return; }
+    users.push({ id: Util.genId(), name, username, password, role, active });
+    Util.toast('User added.', 'success');
+  }
+
+  Store.set('users', users);
+  closeModal('user-modal');
+  renderTable();
+}
+
+function deleteUser(id) {
+  const u = getUsers().find(x => x.id === id);
+  if (!u) return;
+  if (u.username === 'owner') { Util.toast('Cannot delete the owner account.', 'warning'); return; }
+  if (!Util.confirm(`Delete user "${u.name}"?`)) return;
+  Store.set('users', getUsers().filter(x => x.id !== id));
+  Util.toast('User deleted.', 'danger');
+  renderTable();
+}
+
+function closeModal(id) { document.getElementById(id).classList.remove('open'); }
+
+renderTable();
+</script>
+</body>
+</html>

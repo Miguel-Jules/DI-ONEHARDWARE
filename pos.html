@@ -1,0 +1,379 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Point of Sale – DI-One Hardware</title>
+  <link rel="stylesheet" href="css/style.css" />
+  <style>
+    .category-tabs { display:flex; gap:8px; flex-wrap:wrap; margin-bottom:14px; }
+    .cat-tab { padding:5px 14px; border-radius:99px; border:1.5px solid var(--border); background:#fff; cursor:pointer; font-size:0.82rem; font-weight:500; transition:all 0.15s; }
+    .cat-tab.active { background:var(--primary); color:#fff; border-color:var(--primary); }
+  </style>
+</head>
+<body>
+<div class="app-wrapper">
+  <aside class="sidebar" id="sidebar"></aside>
+  <div class="main-content">
+    <div class="topbar">
+      <h1>🛒 Point of Sale</h1>
+      <div class="topbar-right">
+        <span class="badge badge-blue" id="role-badge"></span>
+      </div>
+    </div>
+    <div class="page-body">
+      <div class="pos-layout">
+
+        <!-- Left: product grid -->
+        <div>
+          <div class="card" style="margin-bottom:14px;">
+            <div class="search-bar" style="margin:0;">
+              <input type="text" id="pos-search" placeholder="🔍 Search products..." oninput="renderProducts()" />
+            </div>
+          </div>
+          <div class="category-tabs" id="cat-tabs"></div>
+          <div class="product-grid" id="product-grid"></div>
+        </div>
+
+        <!-- Right: cart -->
+        <div class="pos-cart">
+          <div class="pos-cart-header">
+            🛒 Cart
+            <button class="btn btn-outline btn-sm" onclick="clearCart()">Clear</button>
+          </div>
+          <div class="pos-cart-items" id="cart-items">
+            <div style="text-align:center;padding:30px;color:var(--text-muted);font-size:0.88rem;">Click products to add them here</div>
+          </div>
+          <div class="pos-cart-footer">
+            <div class="cart-total-row"><span>Subtotal</span><span id="cart-subtotal">₱0.00</span></div>
+            <div class="cart-total-row grand"><span>TOTAL</span><span id="cart-total">₱0.00</span></div>
+
+            <!-- Payment Mode Toggle -->
+            <div class="form-group" style="margin:12px 0 6px;">
+              <label>Payment Method</label>
+              <div style="display:flex;gap:0;border-radius:8px;overflow:hidden;border:1.5px solid var(--border);margin-top:4px;">
+                <button id="pay-cash-btn" class="pay-mode-btn active" onclick="setPayMode('cash')"
+                  style="flex:1;padding:8px;border:none;cursor:pointer;font-size:0.88rem;font-weight:600;font-family:var(--font);background:var(--primary);color:#fff;transition:all 0.18s;">
+                  💵 Cash
+                </button>
+                <button id="pay-gcash-btn" class="pay-mode-btn" onclick="setPayMode('gcash')"
+                  style="flex:1;padding:8px;border:none;cursor:pointer;font-size:0.88rem;font-weight:600;font-family:var(--font);background:#f8fafc;color:var(--text-muted);transition:all 0.18s;">
+                  📱 GCash
+                </button>
+              </div>
+            </div>
+
+            <!-- Cash section -->
+            <div id="cash-section">
+              <div class="form-group" style="margin:8px 0;">
+                <label>Cash Tendered (₱)</label>
+                <input type="number" id="cash-input" class="form-control" placeholder="0.00" min="0" step="0.01" oninput="updateChange()" />
+              </div>
+              <div class="cart-total-row" id="change-row" style="display:none;">
+                <span>Change</span><span id="cart-change" style="color:var(--success);font-weight:700;">₱0.00</span>
+              </div>
+            </div>
+
+            <!-- GCash section -->
+            <div id="gcash-section" style="display:none;">
+              <div class="form-group" style="margin:8px 0;">
+                <label>GCash Ref. No. <span style="font-weight:400;text-transform:none;color:var(--text-muted)">(optional)</span></label>
+                <input type="text" id="gcash-ref" class="form-control" placeholder="e.g. 12345678901" maxlength="20" />
+              </div>
+              <div style="background:#f0fdf4;border:1px solid #86efac;border-radius:7px;padding:9px 12px;font-size:0.82rem;color:#15803d;margin-bottom:4px;">
+                📱 Full amount will be collected via GCash. No change needed.
+              </div>
+            </div>
+
+            <button class="btn btn-accent btn-lg" onclick="checkout()" style="width:100%;justify-content:center;margin-top:10px;">
+              💳 Checkout
+            </button>
+          </div>
+        </div>
+
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Receipt Modal -->
+<div class="modal-overlay" id="receipt-modal">
+  <div class="modal">
+    <div class="modal-header">
+      <span class="modal-title">🧾 Transaction Complete</span>
+      <button class="modal-close" onclick="closeModal('receipt-modal')">✕</button>
+    </div>
+    <div id="receipt-body"></div>
+    <div class="modal-footer">
+      <button class="btn btn-outline" onclick="closeModal('receipt-modal')">Close</button>
+      <button class="btn btn-primary" onclick="printReceipt()">🖨 Print Receipt</button>
+    </div>
+  </div>
+</div>
+
+<script src="app.js"></script>
+<script>
+const user = Auth.requireAny();
+document.getElementById('sidebar').innerHTML = buildSidebar(user.role, 'pos');
+document.getElementById('role-badge').textContent = user.role === 'owner' ? 'Owner / Manager' : 'Staff';
+
+let cart = [];
+let activeCategory = 'All';
+let lastReceipt = null;
+let payMode = 'cash'; // 'cash' | 'gcash'
+
+function setPayMode(mode) {
+  payMode = mode;
+  const cashBtn  = document.getElementById('pay-cash-btn');
+  const gcashBtn = document.getElementById('pay-gcash-btn');
+  const cashSec  = document.getElementById('cash-section');
+  const gcashSec = document.getElementById('gcash-section');
+
+  if (mode === 'cash') {
+    cashBtn.style.background  = 'var(--primary)';
+    cashBtn.style.color       = '#fff';
+    gcashBtn.style.background = '#f8fafc';
+    gcashBtn.style.color      = 'var(--text-muted)';
+    cashSec.style.display  = '';
+    gcashSec.style.display = 'none';
+  } else {
+    gcashBtn.style.background = '#0d9488';
+    gcashBtn.style.color      = '#fff';
+    cashBtn.style.background  = '#f8fafc';
+    cashBtn.style.color       = 'var(--text-muted)';
+    cashSec.style.display  = 'none';
+    gcashSec.style.display = '';
+  }
+}
+
+function getProducts() { return Store.get('products', []); }
+
+function buildCategoryTabs() {
+  const cats = ['All', ...new Set(getProducts().map(p => p.category)).values()].sort((a,b) => a==='All'?-1:a.localeCompare(b));
+  document.getElementById('cat-tabs').innerHTML = cats.map(c =>
+    `<button class="cat-tab ${c===activeCategory?'active':''}" onclick="setCategory('${c}')">${c}</button>`
+  ).join('');
+}
+
+function setCategory(cat) {
+  activeCategory = cat;
+  buildCategoryTabs();
+  renderProducts();
+}
+
+function renderProducts() {
+  const search = document.getElementById('pos-search').value.toLowerCase();
+  const products = getProducts().filter(p => {
+    const matchCat = activeCategory === 'All' || p.category === activeCategory;
+    const matchSearch = p.name.toLowerCase().includes(search) || p.category.toLowerCase().includes(search);
+    return matchCat && matchSearch;
+  });
+
+  document.getElementById('product-grid').innerHTML = products.map(p => `
+    <div class="product-card ${p.stock <= 0 ? 'disabled' : ''}" onclick="${p.stock > 0 ? `addToCart(${p.id})` : ''}" style="${p.stock<=0?'opacity:0.45;cursor:not-allowed;':''}">
+      <div class="product-icon">${Icon.render(p.icon, '2rem')}</div>
+      <div class="product-name">${p.name}</div>
+      <div class="product-price">${Util.fmtMoney(p.price)}</div>
+      <div class="product-stock">${p.stock <= 0 ? 'Out of stock' : p.stock + ' ' + p.unit + ' left'}</div>
+    </div>
+  `).join('') || '<div style="color:var(--text-muted);padding:20px;text-align:center;">No products found.</div>';
+}
+
+function addToCart(productId) {
+  const p = getProducts().find(x => x.id === productId);
+  if (!p || p.stock <= 0) return;
+  const existing = cart.find(c => c.productId === productId);
+  if (existing) {
+    if (existing.qty >= p.stock) { Util.toast('Not enough stock!', 'warning'); return; }
+    existing.qty++;
+  } else {
+    cart.push({ productId: p.id, name: p.name, unit: p.unit, price: p.price, qty: 1 });
+  }
+  renderCart();
+}
+
+function changeQty(productId, delta) {
+  const item = cart.find(c => c.productId === productId);
+  if (!item) return;
+  item.qty += delta;
+  if (item.qty <= 0) cart = cart.filter(c => c.productId !== productId);
+  renderCart();
+}
+
+function removeFromCart(productId) {
+  cart = cart.filter(c => c.productId !== productId);
+  renderCart();
+}
+
+function clearCart() {
+  if (cart.length && !Util.confirm('Clear the cart?')) return;
+  cart = [];
+  document.getElementById('cash-input').value = '';
+  document.getElementById('gcash-ref').value  = '';
+  document.getElementById('change-row').style.display = 'none';
+  renderCart();
+}
+
+function renderCart() {
+  const el = document.getElementById('cart-items');
+  if (!cart.length) {
+    el.innerHTML = '<div style="text-align:center;padding:30px;color:var(--text-muted);font-size:0.88rem;">Click products to add them here</div>';
+    document.getElementById('cart-subtotal').textContent = '₱0.00';
+    document.getElementById('cart-total').textContent = '₱0.00';
+    document.getElementById('change-row').style.display = 'none';
+    return;
+  }
+  const total = cart.reduce((a, c) => a + c.price * c.qty, 0);
+  el.innerHTML = cart.map(c => `
+    <div class="cart-item">
+      <div class="cart-item-name">${c.name}<br><small style="color:var(--text-muted)">${Util.fmtMoney(c.price)} / ${c.unit}</small></div>
+      <div class="cart-item-qty">
+        <button class="qty-btn" onclick="changeQty(${c.productId}, -1)">−</button>
+        <span>${c.qty}</span>
+        <button class="qty-btn" onclick="changeQty(${c.productId}, 1)">+</button>
+      </div>
+      <div class="cart-item-price">${Util.fmtMoney(c.price * c.qty)}</div>
+      <button class="cart-item-remove" onclick="removeFromCart(${c.productId})">✕</button>
+    </div>
+  `).join('');
+  document.getElementById('cart-subtotal').textContent = Util.fmtMoney(total);
+  document.getElementById('cart-total').textContent = Util.fmtMoney(total);
+  updateChange();
+}
+
+function updateChange() {
+  if (payMode !== 'cash') return;
+  const total = cart.reduce((a, c) => a + c.price * c.qty, 0);
+  const cash = parseFloat(document.getElementById('cash-input').value) || 0;
+  const changeRow = document.getElementById('change-row');
+  if (cash > 0) {
+    const change = cash - total;
+    document.getElementById('cart-change').textContent = Util.fmtMoney(Math.max(0, change));
+    document.getElementById('cart-change').style.color = change < 0 ? 'var(--danger)' : 'var(--success)';
+    changeRow.style.display = 'flex';
+  } else {
+    changeRow.style.display = 'none';
+  }
+}
+
+function checkout() {
+  if (!cart.length) { Util.toast('Cart is empty.', 'warning'); return; }
+  const total = cart.reduce((a, c) => a + c.price * c.qty, 0);
+
+  let cash = 0, change = 0, gcashRef = '';
+
+  if (payMode === 'cash') {
+    cash = parseFloat(document.getElementById('cash-input').value) || 0;
+    if (cash < total) { Util.toast('Cash tendered is less than total.', 'warning'); return; }
+    change = cash - total;
+  } else {
+    gcashRef = document.getElementById('gcash-ref').value.trim();
+    cash = total; // exact amount via GCash
+    change = 0;
+  }
+
+  // Deduct stock
+  const products = Store.get('products', []);
+  for (const item of cart) {
+    const p = products.find(x => x.id === item.productId);
+    if (p) p.stock = Math.max(0, p.stock - item.qty);
+  }
+  Store.set('products', products);
+
+  // Save sale
+  const ref = Util.genRef('TXN');
+  const sale = {
+    id: Util.genId(), ref, date: Date.now(),
+    staffId: user.id, staffName: user.name,
+    payMode, gcashRef,
+    items: cart.map(c => ({ ...c, subtotal: c.price * c.qty })),
+    total, cash, change
+  };
+  const sales = Store.get('sales', []);
+  sales.unshift(sale);
+  Store.set('sales', sales);
+  lastReceipt = sale;
+
+  // Build receipt
+  const payBadge = payMode === 'gcash'
+    ? `<span style="background:#ccfbf1;color:#0d9488;padding:2px 10px;border-radius:99px;font-size:0.78rem;font-weight:700;">📱 GCash</span>`
+    : `<span style="background:#dbeafe;color:#1d4ed8;padding:2px 10px;border-radius:99px;font-size:0.78rem;font-weight:700;">💵 Cash</span>`;
+
+  document.getElementById('receipt-body').innerHTML = `
+    <div style="text-align:center;margin-bottom:16px;">
+      <div style="font-size:1.1rem;font-weight:700;color:var(--primary);">DI-One Hardware</div>
+      <div style="font-size:0.78rem;color:var(--text-muted);">${ref} · ${Util.fmtDateTime(sale.date)}</div>
+      <div style="font-size:0.78rem;color:var(--text-muted);">Cashier: ${user.name}</div>
+      <div style="margin-top:6px;">${payBadge}</div>
+    </div>
+    <div class="table-wrap">
+      <table>
+        <thead><tr><th>Item</th><th>Qty</th><th>Price</th><th>Subtotal</th></tr></thead>
+        <tbody>
+          ${sale.items.map(i => `<tr><td>${i.name}</td><td>${i.qty}</td><td>${Util.fmtMoney(i.price)}</td><td>${Util.fmtMoney(i.subtotal)}</td></tr>`).join('')}
+        </tbody>
+      </table>
+    </div>
+    <div style="margin-top:12px;border-top:1px solid var(--border);padding-top:10px;">
+      <div style="display:flex;justify-content:space-between;font-weight:700;font-size:1rem;">
+        <span>TOTAL</span><span>${Util.fmtMoney(total)}</span>
+      </div>
+      ${payMode === 'cash' ? `
+      <div style="display:flex;justify-content:space-between;margin-top:4px;font-size:0.88rem;">
+        <span>Cash</span><span>${Util.fmtMoney(cash)}</span>
+      </div>
+      <div style="display:flex;justify-content:space-between;font-size:0.88rem;color:var(--success);font-weight:600;">
+        <span>Change</span><span>${Util.fmtMoney(change)}</span>
+      </div>` : `
+      <div style="display:flex;justify-content:space-between;margin-top:4px;font-size:0.88rem;color:#0d9488;font-weight:600;">
+        <span>📱 Paid via GCash</span><span>${Util.fmtMoney(total)}</span>
+      </div>
+      ${gcashRef ? `<div style="font-size:0.78rem;color:var(--text-muted);margin-top:2px;">Ref. No.: ${gcashRef}</div>` : ''}`}
+    </div>
+  `;
+  document.getElementById('receipt-modal').classList.add('open');
+
+  cart = [];
+  document.getElementById('cash-input').value = '';
+  document.getElementById('gcash-ref').value  = '';
+  document.getElementById('change-row').style.display = 'none';
+  renderCart();
+  renderProducts();
+  Util.toast('Transaction saved!', 'success');
+}
+
+function printReceipt() {
+  if (!lastReceipt) return;
+  const s = lastReceipt;
+  const w = window.open('', '_blank');
+  const payLine = s.payMode === 'gcash'
+    ? `<div style="display:flex;justify-content:space-between;"><span>GCash</span><span>₱${s.total.toFixed(2)}</span></div>${s.gcashRef ? `<div style="font-size:0.8rem;color:#555;">Ref: ${s.gcashRef}</div>` : ''}`
+    : `<div style="display:flex;justify-content:space-between;"><span>Cash</span><span>₱${s.cash.toFixed(2)}</span></div>
+       <div style="display:flex;justify-content:space-between;"><span>Change</span><span>₱${s.change.toFixed(2)}</span></div>`;
+
+  w.document.write(`<html><head><title>Receipt ${s.ref}</title><style>
+    body{font-family:'Segoe UI',Arial,sans-serif;padding:20px;max-width:320px;margin:0 auto;font-size:0.88rem;}
+    table{width:100%;border-collapse:collapse;}th,td{padding:4px 6px;border-bottom:1px solid #eee;}
+    .total{font-weight:700;font-size:1rem;}.center{text-align:center;}
+  </style></head><body>
+    <div class="center"><strong>DI-One Hardware</strong><br>${s.ref}<br>${new Date(s.date).toLocaleString('en-PH')}<br>Cashier: ${s.staffName}</div>
+    <div class="center" style="margin:4px 0;">${s.payMode === 'gcash' ? '📱 GCash' : '💵 Cash'}</div>
+    <hr>
+    <table><thead><tr><th>Item</th><th>Qty</th><th>Subtotal</th></tr></thead>
+    <tbody>${s.items.map(i=>`<tr><td>${i.name}</td><td>${i.qty}</td><td>₱${i.subtotal.toFixed(2)}</td></tr>`).join('')}</tbody></table>
+    <hr>
+    <div class="total" style="display:flex;justify-content:space-between;"><span>TOTAL</span><span>₱${s.total.toFixed(2)}</span></div>
+    ${payLine}
+    <hr><div class="center">Thank you!</div>
+  </body></html>`);
+  w.print();
+}
+
+function closeModal(id) { document.getElementById(id).classList.remove('open'); }
+
+// Init
+buildCategoryTabs();
+renderProducts();
+</script>
+</body>
+</html>

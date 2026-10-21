@@ -1,0 +1,234 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Owner Dashboard – DI-One Hardware</title>
+  <link rel="stylesheet" href="css/style.css" />
+</head>
+<body>
+<div class="app-wrapper">
+  <aside class="sidebar" id="sidebar"></aside>
+  <div class="main-content">
+    <div class="topbar">
+      <h1>📊 Owner Dashboard</h1>
+      <div class="topbar-right">
+        <span id="topbar-date"></span>
+        <span class="badge badge-blue">Owner / Manager</span>
+      </div>
+    </div>
+    <div class="page-body">
+
+      <!-- Stats -->
+      <div class="stats-grid" id="stats-grid"></div>
+
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:20px;">
+
+        <!-- Recent Sales -->
+        <div class="card">
+          <div class="card-title">🛒 Recent Sales</div>
+          <div class="table-wrap">
+            <table>
+              <thead>
+                <tr>
+                  <th>Ref</th>
+                  <th>Items</th>
+                  <th>Total</th>
+                  <th>By</th>
+                  <th>Date</th>
+                </tr>
+              </thead>
+              <tbody id="recent-sales"></tbody>
+            </table>
+          </div>
+        </div>
+
+        <!-- Low Stock Alerts -->
+        <div class="card">
+          <div class="card-title">⚠️ Low Stock Alerts</div>
+          <div id="low-stock-list"></div>
+        </div>
+
+      </div>
+
+      <!-- Expiry Alerts -->
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:20px;margin-top:0;">
+        <div class="card" style="border-top:3px solid var(--danger);">
+          <div class="card-title" style="color:var(--danger);">⛔ Expired Products</div>
+          <div id="expired-list"></div>
+        </div>
+        <div class="card" style="border-top:3px solid var(--warning);">
+          <div class="card-title" style="color:var(--warning);">⏳ Expiring Soon <span style="font-size:0.78rem;font-weight:400;color:var(--text-muted);">within 30 days</span></div>
+          <div id="expiring-list"></div>
+        </div>
+      </div>
+
+      <!-- Recent Estimates -->
+      <div class="card" style="margin-top:0;">
+        <div class="card-title">📐 Recent Estimates</div>
+        <div class="table-wrap">
+          <table>
+            <thead>
+              <tr><th>Ref</th><th>Project</th><th>Items</th><th>Total Cost</th><th>Created By</th><th>Date</th></tr>
+            </thead>
+            <tbody id="recent-estimates"></tbody>
+          </table>
+        </div>
+      </div>
+
+    </div>
+  </div>
+</div>
+
+<script src="app.js"></script>
+<script>
+const user = Auth.require('owner');
+document.getElementById('sidebar').innerHTML = buildSidebar('owner', 'dashboard');
+document.getElementById('topbar-date').textContent = new Date().toLocaleDateString('en-PH', { weekday:'long', year:'numeric', month:'long', day:'numeric' });
+
+function expiryStatus(expiry) {
+  if (!expiry) return 'none';
+  const today = new Date(); today.setHours(0,0,0,0);
+  const exp   = new Date(expiry);
+  const diffDays = Math.ceil((exp - today) / (1000 * 60 * 60 * 24));
+  if (diffDays < 0)   return 'expired';
+  if (diffDays <= 30) return 'expiring';
+  return 'fresh';
+}
+
+function render() {
+  const products = Store.get('products', []);
+  const sales    = Store.get('sales', []);
+  const estimates= Store.get('estimates', []);
+
+  const todayStr = new Date().toDateString();
+  const todaySales = sales.filter(s => new Date(s.date).toDateString() === todayStr);
+  const todayRevenue = todaySales.reduce((a, s) => a + s.total, 0);
+  const totalStock = products.reduce((a, p) => a + p.stock, 0);
+  const lowStock   = products.filter(p => p.stock > 0 && p.stock <= 20);
+  const outOfStock = products.filter(p => p.stock <= 0);
+  const expired    = products.filter(p => expiryStatus(p.expiry) === 'expired');
+  const expiring   = products.filter(p => expiryStatus(p.expiry) === 'expiring')
+                              .sort((a,b) => new Date(a.expiry) - new Date(b.expiry));
+
+  // Stats
+  document.getElementById('stats-grid').innerHTML = `
+    <div class="stat-card green">
+      <div class="stat-label">Today's Revenue</div>
+      <div class="stat-value" style="font-size:1.4rem">${Util.fmtMoney(todayRevenue)}</div>
+      <div class="stat-sub">${todaySales.length} transaction(s) today</div>
+    </div>
+    <div class="stat-card blue">
+      <div class="stat-label">Total Products</div>
+      <div class="stat-value">${products.length}</div>
+      <div class="stat-sub">${totalStock} total units in stock</div>
+    </div>
+    <div class="stat-card orange">
+      <div class="stat-label">Low Stock Items</div>
+      <div class="stat-value">${lowStock.length}</div>
+      <div class="stat-sub">≤ 20 units remaining</div>
+    </div>
+    <div class="stat-card red">
+      <div class="stat-label">Out of Stock</div>
+      <div class="stat-value">${outOfStock.length}</div>
+      <div class="stat-sub">Need restocking</div>
+    </div>
+    <div class="stat-card blue">
+      <div class="stat-label">Total Sales</div>
+      <div class="stat-value">${sales.length}</div>
+      <div class="stat-sub">All time transactions</div>
+    </div>
+    <div class="stat-card orange">
+      <div class="stat-label">Saved Estimates</div>
+      <div class="stat-value">${estimates.length}</div>
+      <div class="stat-sub">Material estimations</div>
+    </div>
+  `;
+
+  // Recent sales
+  const salesEl = document.getElementById('recent-sales');
+  if (!sales.length) {
+    salesEl.innerHTML = '<tr><td colspan="5" style="text-align:center;color:var(--text-muted);padding:16px;">No sales yet.</td></tr>';
+  } else {
+    salesEl.innerHTML = sales.slice(0,8).map(s => `
+      <tr>
+        <td><span class="badge badge-blue">${s.ref}</span></td>
+        <td>${s.items.length} item(s)</td>
+        <td style="font-weight:600;color:var(--success)">${Util.fmtMoney(s.total)}</td>
+        <td>${s.staffName || '—'}</td>
+        <td>${Util.fmtDate(s.date)}</td>
+      </tr>
+    `).join('');
+  }
+
+  // Low stock
+  const lowEl = document.getElementById('low-stock-list');
+  const alerts = [...outOfStock.map(p => ({...p, level:'out'})), ...lowStock.map(p => ({...p, level:'low'}))];
+  if (!alerts.length) {
+    lowEl.innerHTML = '<div style="color:var(--success);padding:12px 0;font-size:0.88rem;">✅ All items are well-stocked.</div>';
+  } else {
+    lowEl.innerHTML = alerts.slice(0,8).map(p => `
+      <div style="display:flex;justify-content:space-between;align-items:center;padding:8px 0;border-bottom:1px solid var(--border);">
+        <span style="font-size:0.88rem;">${p.icon} ${p.name}</span>
+        ${p.level === 'out'
+          ? '<span class="badge badge-red">Out of Stock</span>'
+          : `<span class="badge badge-orange">${p.stock} ${p.unit} left</span>`}
+      </div>
+    `).join('');
+  }
+
+  // Expired products
+  const expiredEl = document.getElementById('expired-list');
+  if (!expired.length) {
+    expiredEl.innerHTML = '<div style="color:var(--success);padding:10px 0;font-size:0.88rem;">✅ No expired products.</div>';
+  } else {
+    expiredEl.innerHTML = expired.map(p => `
+      <div style="display:flex;justify-content:space-between;align-items:center;padding:8px 0;border-bottom:1px solid var(--border);">
+        <span style="font-size:0.88rem;">${p.icon} ${p.name}</span>
+        <span style="text-align:right;">
+          <span class="badge" style="background:#fce4e4;color:#b91c1c;border:1px solid #fca5a5;">⛔ ${Util.fmtDate(p.expiry)}</span>
+        </span>
+      </div>
+    `).join('');
+  }
+
+  // Expiring soon
+  const expiringEl = document.getElementById('expiring-list');
+  if (!expiring.length) {
+    expiringEl.innerHTML = '<div style="color:var(--success);padding:10px 0;font-size:0.88rem;">✅ No products expiring soon.</div>';
+  } else {
+    expiringEl.innerHTML = expiring.map(p => {
+      const days = Math.ceil((new Date(p.expiry) - new Date().setHours(0,0,0,0)) / 86400000);
+      return `
+        <div style="display:flex;justify-content:space-between;align-items:center;padding:8px 0;border-bottom:1px solid var(--border);">
+          <span style="font-size:0.88rem;">${p.icon} ${p.name}</span>
+          <span style="text-align:right;">
+            <span class="badge" style="background:#fef9c3;color:#854d0e;border:1px solid #fde047;">⏳ ${days === 0 ? 'Today' : days + 'd left'}</span><br>
+            <span style="font-size:0.72rem;color:var(--text-muted);">${Util.fmtDate(p.expiry)}</span>
+          </span>
+        </div>`;
+    }).join('');
+  }
+
+  // Recent estimates
+  const estEl = document.getElementById('recent-estimates');
+  if (!estimates.length) {
+    estEl.innerHTML = '<tr><td colspan="6" style="text-align:center;color:var(--text-muted);padding:16px;">No estimates yet.</td></tr>';
+  } else {
+    estEl.innerHTML = estimates.slice(0,6).map(e => `
+      <tr>
+        <td><span class="badge badge-orange">${e.ref}</span></td>
+        <td>${e.project}</td>
+        <td>${e.items.length} item(s)</td>
+        <td style="font-weight:600;color:var(--accent)">${Util.fmtMoney(e.totalCost)}</td>
+        <td>${e.createdBy}</td>
+        <td>${Util.fmtDate(e.date)}</td>
+      </tr>
+    `).join('');
+  }
+}
+
+render();
+</script>
+</body>
+</html>

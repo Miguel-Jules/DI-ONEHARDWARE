@@ -1,0 +1,179 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Stock In/Out – DI-One Hardware</title>
+  <link rel="stylesheet" href="css/style.css" />
+</head>
+<body>
+<div class="app-wrapper">
+  <aside class="sidebar" id="sidebar"></aside>
+  <div class="main-content">
+    <div class="topbar">
+      <h1>🔄 Stock In / Out</h1>
+      <div class="topbar-right">
+        <span class="badge badge-blue" id="role-badge"></span>
+      </div>
+    </div>
+    <div class="page-body">
+
+      <div style="display:grid;grid-template-columns:380px 1fr;gap:20px;align-items:start;">
+
+        <!-- Stock Adjustment Form -->
+        <div class="card" style="position:sticky;top:80px;">
+          <div class="card-title">📥 Record Stock Movement</div>
+          <div class="form-group">
+            <label>Type</label>
+            <select id="stock-type" class="form-control">
+              <option value="in">📥 Stock In (Restock / Delivery)</option>
+              <option value="out">📤 Stock Out (Damage / Loss / Adjustment)</option>
+            </select>
+          </div>
+          <div class="form-group">
+            <label>Product</label>
+            <select id="stock-product" class="form-control"></select>
+          </div>
+          <div class="form-group">
+            <label>Current Stock</label>
+            <input type="text" id="stock-current" class="form-control" readonly style="background:#f8fafc;" />
+          </div>
+          <div class="form-group">
+            <label>Quantity</label>
+            <input type="number" id="stock-qty" class="form-control" min="1" value="1" />
+          </div>
+          <div class="form-group">
+            <label>Reason / Notes</label>
+            <input type="text" id="stock-notes" class="form-control" placeholder="e.g. Delivery from supplier, Damaged goods..." />
+          </div>
+          <button class="btn btn-accent btn-lg" onclick="saveStockLog()" style="width:100%;justify-content:center;">
+            💾 Save Stock Movement
+          </button>
+        </div>
+
+        <!-- Log Table -->
+        <div class="card">
+          <div class="section-header">
+            <div class="card-title" style="margin:0">📋 Stock Movement Log</div>
+            <div style="display:flex;gap:8px;">
+              <select id="log-filter" class="form-control" style="width:auto;" onchange="renderLog()">
+                <option value="">All Types</option>
+                <option value="in">Stock In</option>
+                <option value="out">Stock Out</option>
+              </select>
+            </div>
+          </div>
+          <div class="table-wrap">
+            <table>
+              <thead>
+                <tr>
+                  <th>Date</th>
+                  <th>Type</th>
+                  <th>Product</th>
+                  <th>Qty</th>
+                  <th>Notes</th>
+                  <th>By</th>
+                </tr>
+              </thead>
+              <tbody id="log-table"></tbody>
+            </table>
+          </div>
+        </div>
+
+      </div>
+    </div>
+  </div>
+</div>
+
+<script src="app.js"></script>
+<script>
+const user = Auth.requireAny();
+document.getElementById('sidebar').innerHTML = buildSidebar(user.role, 'stock');
+document.getElementById('role-badge').textContent = user.role === 'owner' ? 'Owner / Manager' : 'Staff';
+
+function getProducts() { return Store.get('products', []); }
+
+function loadProductSelect() {
+  const sel = document.getElementById('stock-product');
+  const products = getProducts();
+  sel.innerHTML = products.map(p => `<option value="${p.id}">${p.icon} ${p.name} (${p.unit})</option>`).join('');
+  updateCurrentStock();
+}
+
+function updateCurrentStock() {
+  const id = parseInt(document.getElementById('stock-product').value);
+  const p = getProducts().find(x => x.id === id);
+  document.getElementById('stock-current').value = p ? `${p.stock} ${p.unit}` : '—';
+}
+
+document.getElementById('stock-product').addEventListener('change', updateCurrentStock);
+
+function saveStockLog() {
+  const type  = document.getElementById('stock-type').value;
+  const prodId= parseInt(document.getElementById('stock-product').value);
+  const qty   = parseInt(document.getElementById('stock-qty').value) || 0;
+  const notes = document.getElementById('stock-notes').value.trim();
+
+  if (qty <= 0) { Util.toast('Quantity must be at least 1.', 'warning'); return; }
+
+  const products = Store.get('products', []);
+  const p = products.find(x => x.id === prodId);
+  if (!p) return;
+
+  if (type === 'out' && qty > p.stock) {
+    Util.toast(`Cannot remove more than current stock (${p.stock} ${p.unit}).`, 'warning');
+    return;
+  }
+
+  const before = p.stock;
+  p.stock = type === 'in' ? p.stock + qty : Math.max(0, p.stock - qty);
+  Store.set('products', products);
+
+  const logs = Store.get('stockLogs', []);
+  logs.unshift({
+    id: Util.genId(), date: Date.now(), type, productId: p.id,
+    productName: p.name, unit: p.unit, qty, before, after: p.stock,
+    notes, staffId: user.id, staffName: user.name
+  });
+  Store.set('stockLogs', logs);
+
+  Util.toast(`Stock ${type === 'in' ? 'added' : 'removed'} successfully.`, 'success');
+  document.getElementById('stock-qty').value = '1';
+  document.getElementById('stock-notes').value = '';
+  updateCurrentStock();
+  renderLog();
+}
+
+function renderLog() {
+  const filter = document.getElementById('log-filter').value;
+  const logs = Store.get('stockLogs', []).filter(l => !filter || l.type === filter);
+  const el = document.getElementById('log-table');
+  if (!logs.length) {
+    el.innerHTML = '<tr><td colspan="6" style="text-align:center;padding:20px;color:var(--text-muted);">No stock movements recorded yet.</td></tr>';
+    return;
+  }
+  el.innerHTML = logs.map(l => `
+    <tr>
+      <td>${Util.fmtDateTime(l.date)}</td>
+      <td>${l.type === 'in'
+        ? '<span class="badge badge-green">📥 In</span>'
+        : '<span class="badge badge-red">📤 Out</span>'}</td>
+      <td>${l.productName}</td>
+      <td>
+        <strong style="color:${l.type==='in'?'var(--success)':'var(--danger)'}">
+          ${l.type==='in'?'+':'−'}${l.qty} ${l.unit}
+        </strong>
+        <span style="font-size:0.75rem;color:var(--text-muted);margin-left:4px;">(${l.before} → ${l.after})</span>
+      </td>
+      <td style="font-size:0.85rem;color:var(--text-muted);">${l.notes || '—'}</td>
+      <td>${l.staffName}</td>
+    </tr>
+  `).join('');
+}
+
+// Init
+loadProductSelect();
+renderLog();
+</script>
+</body>
+</html>
